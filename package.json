@@ -49,12 +49,12 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/wangser10032/dsh-model-autoconfig-.git"
+    "url": "git+https://github.com/wangser10032/dsh-model-autoconfig.git"
   },
   "bugs": {
-    "url": "https://github.com/wangser10032/dsh-model-autoconfig-/issues"
+    "url": "https://github.com/wangser10032/dsh-model-autoconfig/issues"
   },
-  "homepage": "https://github.com/wangser10032/dsh-model-autoconfig-#readme",
+  "homepage": "https://github.com/wangser10032/dsh-model-autoconfig#readme",
   "publishConfig": {
     "access": "public"
   },
