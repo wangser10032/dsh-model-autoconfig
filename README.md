@@ -1,69 +1,86 @@
 # dsh-model-autoconfig
 
-DeepSeek Harness **web 插件**：在 Settings → Models 填 URL 和密钥后，按厂商真值库自动写入思考档位、视觉 `input`、协议和上下文。
+自动修正 dsh 模型的**思考模式**和**模型能力**。
 
-**0.10.0**：编译产物必须通过真实宿主 Config schema；火山/硅基/百炼平台覆盖；核心厂商目录覆盖 100%。
+适用于官方 API、硅基流动、火山方舟、阿里百炼、OpenRouter，以及常见中转站。
+
+## 为什么需要这个插件
+
+dsh 自带的模型目录并不完整，部分模型的思考档位和能力配置会缺失或写错。
+
+以当前 pi-ai 模型目录为例：
+
+```text
+模型总数          1290
+声明了思考档位     543
+缺少 off 档        151
+```
+
+缺少 `off` 会让 dsh 错误判断模型的思考状态，可能导致：
+
+- 思考模式无法正确开启或关闭
+- 思考档位显示错误
+- 长输出被意外截断
+
+插件会补上正确的 `off` 和思考档位，避免这些问题。
+
+## 插件会做什么
+
+1. **修正思考模式**
+   - 模型是否支持思考
+   - 思考能否关闭
+   - 支持哪些档位，例如 Low、High、Max
+
+2. **自动配置模型**
+   - 根据模型厂商的官方资料填写正确参数
+   - 支持官方服务、第三方平台和中转站
+
+3. **补全模型能力**
+   - 是否支持图片输入
+   - 上下文长度
+   - 最大输出长度
+
+4. **检查错误配置**
+   - 无效或虚假的思考档位
+   - 漏掉的视觉能力
+   - 会被 dsh 拒绝的配置
+
+## 安装
 
 ```bash
 dsh plugin --profile web add dsh-model-autoconfig
 ```
 
-打开 **Settings → Models**。自定义网关保存 URL + 密钥即可；官方 `deepseek` / `openai` 等只补档位和缺的视觉，不替换内置目录。不想自动写时在 `cordis.patch.yml` 设 `autoFill: false`。没有单独的插件设置页。
+安装后重启 dsh web。
 
-## 它做什么
+## 使用
 
-dsh 原生模型表单没有思考强度。内置 pi-ai 目录大量条目缺 `off` 键，上游 `thinkingLevelMap?.off !== null` 会把思考无条件关掉、长输出截断（Discussion #1580）。本插件写入显式 `off:`（空值）以及各厂商真实档位。
+1. 打开 dsh 的 **Settings → Models**
+2. 添加模型服务，填写 API 地址和 API Key
+3. 获取模型列表或手动填写模型 ID，然后保存
 
-自定义网关写 `models[]`；官方目录路由只写 `modelOverrides`。档位表覆盖；`input` 只增不减；用户手改的 `compat` 键不覆盖。
+插件会自动完成其余配置，不需要手动修改 `settings.yaml`。
 
-## 安装与运行
+## 没有模型列表怎么办
 
-需要 dsh web（0.0.1-rc.1～0.1.2）。Node ≥ 20。
+部分中转站没有模型列表接口，直接手动填写模型 ID 即可。
 
-```bash
-dsh plugin --profile web add dsh-model-autoconfig
-```
+插件会尝试识别模型。无法确认的模型会原样保留，不会添加未经确认的能力。
 
-维护者 CLI（默认 dry-run，`--apply` 才落盘）：
+## 如何确认生效
 
-```bash
-npx dsh-mac audit
-npx dsh-mac add --id deepseek --vendor deepseek --key sk-… --apply
-npx dsh-mac doctor
-```
+重新打开模型选择器：
 
-## 宿主硬约束（写错会被整段拒绝）
+- 思考模型会显示正确的思考档位
+- 支持视觉的模型可以发送图片
+- 上下文和最大输出长度会被正确设置
 
-- 手写路由 `api` 只能是 `openai-completions` / `openai-responses` / `anthropic-messages`（不要写 `google-generative-ai`）
-- `compat.thinkingFormat` 没有 `reasoning_effort`（那是 wire 字段名；xAI/Groq 用 `openai`）
-- 模型级 compat 按协议门控：openai-completions 17 字段、responses 3、anthropic-messages 7
-- `reasoningEfforts` 只有 `off` 允许空值；YAML 里必须写成 `"off":`
+如果没有立即更新，请刷新网页或重启 dsh web。
 
-跨版本：运行时读 `settings.describe().schema` 裁剪字段；拿不到退回 0.1.2 全集。
-
-## 平台覆盖
-
-URL 命中时叠在真值之上（用户手改的 compat 优先）：
-
-| 平台 | 行为 |
-|---|---|
-| 火山方舟 `ark.*.volces.com` | 档位用 doubao 真值；coding 端点 maxTokens 夹 128000；关 developer |
-| 硅基流动 `api.siliconflow.cn` | DeepSeek-V4 / GLM-5.2：low/medium→high、xhigh→max |
-| 阿里百炼 `dashscope.*.aliyuncs.com` | `thinkingFormat: qwen`，关 developer/store |
-
-## 开发
+## 卸载
 
 ```bash
-npm test          # node --test test/*.test.mjs
+dsh plugin --profile web remove dsh-model-autoconfig
 ```
 
-源码三层：`src/dsh`（插件/同步/宿主）、`src/truth`（真值/编译/平台）、`src/match`（硬映射+软匹配）。根目录 `src/*.mjs` 是兼容 re-export。给 agent 的模块表与契约见 [AGENTS.md](AGENTS.md)。
-
-加规则：`src/truth/vendors.mjs`，必须带官方 URL 或 pi-ai 目录出处；要么有 `off` 档，要么写 `forcedThinking`。不要编造档位。
-
-## 限制
-
-- 密钥只写 `apiKeyEnv` 名，不落明文
-- 插件经 settings 服务写入，不直接改 `settings.yaml`；无 CLI 那种备份
-- 用户从 `models[]` 删掉的 id 记在 `.dsh-model-autoconfig.json` 的 `deletedIds`，不会被 `/models` 加回
-- 视觉靠 `input: [text, image]`，schema 不认 audio
+卸载后重启 dsh web。
