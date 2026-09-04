@@ -12,13 +12,23 @@ import { name } from '../src/dsh/plugin.mjs';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 
-test('版本 0.10.0，入口仍兼容 src/plugin.mjs', async () => {
+test('版本 0.11.0，服务端与浏览器入口都可发布', async () => {
   const pkg = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
   const plugin = JSON.parse(await readFile(join(root, 'dsh.plugin.json'), 'utf8'));
-  assert.equal(pkg.version, '0.10.0');
-  assert.equal(plugin.version, '0.10.0');
+  assert.equal(pkg.version, '0.11.0');
+  assert.equal(plugin.version, '0.11.0');
   assert.equal(pkg.main, './src/plugin.mjs');
   assert.equal(plugin.main, 'src/plugin.mjs');
+  assert.equal(pkg.exports['./client'], './lib/client.js');
+  assert.ok(pkg.files.includes('lib'));
+  assert.deepEqual(pkg.dsh.client, {
+    inject: [
+      '@deepseek-ai/dsh-api-session-controller',
+      '@deepseek-ai/dsh-client-ui-model-selection',
+    ],
+    platform: 'web',
+  });
+  await readFile(join(root, 'lib', 'client.js'), 'utf8');
   assert.equal(name, 'model-autoconfig');
 });
 

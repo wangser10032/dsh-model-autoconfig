@@ -22,6 +22,7 @@
 | `src/match/aliases.mjs` | 硬映射表（键小写，值必须原样命中真值库） |
 | `src/index.mjs` | `dsh-model-autoconfig/lib` 聚合导出 |
 | `src/*.mjs`（根） | 兼容 re-export，勿在此写逻辑 |
+| `lib/client.js` | 浏览器插件：localStorage JSON 按 provider+model 记忆最后成功档位，失效档位回退默认 |
 | `bin/dsh-mac.mjs` | 维护者 CLI |
 | `test/host-schema.test.mjs` | 编译产物必须过真实宿主 `new Config`（禁止 skip） |
 | `test/coverage.test.mjs` | pi-ai 目录覆盖率：核心 100%、全目录 ≥80% |
