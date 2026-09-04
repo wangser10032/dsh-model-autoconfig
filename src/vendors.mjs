@@ -221,7 +221,11 @@ export const VENDORS = [
       { match: /gpt-oss/i,
         forcedThinking: 'Groq 上 gpt-oss 只接受 low/medium/high；none 仅对 Qwen 3.6/3.8 有效。include_reasoning:false 只是不回传思考内容，模型照样思考照样计费', contextWindow: 131072, maxTokens: 65536, input: ['text'],
         efforts: { low: 'low', medium: 'medium', high: 'high' } },
-      { match: /^qwen\//i, contextWindow: 131072, maxTokens: 65536, input: ['text'],
+      // platformOnly：qwen/ 前缀是 Groq 自己的命名空间，不做全局匹配 ——
+      // 会与 ModelScope / 硅基流动 / 百炼的 org/model 前缀 id（Qwen/Qwen3-…）
+      // 冲突，把 Groq 专属 wire 拼写（none/default）配给别家平台。
+      // gpt-oss 是跨平台开源模型、档位与官方一致，不设此标记。
+      { match: /^qwen\//i, platformOnly: true, contextWindow: 131072, maxTokens: 65536, input: ['text'],
         efforts: { off: 'none', high: 'default' },
         note: 'Qwen 族用 none/default 两值，与 gpt-oss 族的 low/medium/high 不通用' },
     ],
@@ -311,7 +315,10 @@ export function findAnyVendor(modelId) {
     for (const v of VENDORS) {
       if (v.id === 'openrouter') continue;        // 通配规则，不参与自动匹配
       const spec = modelSpec(v, id);
-      if (spec) return { vendor: v, spec, id, via };
+      // 平台专属命名（如 Groq 的 qwen/ 前缀）不参与全局匹配：其命名空间
+      // 与第三方平台的 org/model 前缀冲突，只该在 URL 命中该平台时使用。
+      if (!spec || spec.platformOnly) continue;
+      return { vendor: v, spec, id, via };
     }
   }
   return null;

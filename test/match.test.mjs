@@ -13,7 +13,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { MODEL_ALIASES } from '../src/aliases.mjs';
 import { resolveModelCandidates } from '../src/match.mjs';
-import { findAnyVendor } from '../src/vendors.mjs';
+import { findAnyVendor, modelSpec, vendorForUrl } from '../src/vendors.mjs';
 import { planGatewayRoute } from '../src/sync.mjs';
 
 /* ── 硬映射 ──────────────────────────────────────────────────── */
@@ -60,6 +60,13 @@ test('软匹配：YYYYMMDD / YYYY-MM-DD / YYMM 三种日期形态', () => {
   assert.equal(findAnyVendor('deepseek-v4-flash-20250901')?.via, '去日期后缀');
   assert.equal(findAnyVendor('deepseek-v4-flash-2025-09-01')?.via, '去日期后缀');
   assert.equal(findAnyVendor('deepseek-v4-flash-2507')?.via, '去日期后缀');
+});
+
+test('软匹配：YYMMDD 日期形态（火山方舟 -250828 风格）', () => {
+  const hit = findAnyVendor('deepseek-v4-pro-250828');
+  assert.equal(hit?.vendor.id, 'deepseek');
+  assert.equal(hit?.id, 'deepseek-v4-pro');
+  assert.equal(hit?.via, '去日期后缀');
 });
 
 test('软匹配：量化后缀', () => {
@@ -143,6 +150,21 @@ test('认不出的 id 仍返回 null', () => {
   assert.equal(findAnyVendor('totally-unknown-model'), null);
   assert.equal(findAnyVendor('my-custom-slot'), null);
   assert.equal(findAnyVendor('deepseek-v3'), null);
+});
+
+test('平台专属规则不参与全局匹配：Qwen/ 前缀不再配上 Groq 档位', () => {
+  // ModelScope / 硅基流动 / 百炼的 org/model 形式（Qwen/Qwen3-235B-A22B）
+  // 曾原样命中 groq 的 /^qwen\//i 规则，被配上 Groq 专属 wire 拼写
+  // （off:'none' / high:'default'）—— 发给这些平台就是错的。
+  assert.equal(findAnyVendor('Qwen/Qwen3-235B-A22B'), null);
+  // 带 -vl 的仍走 qwen 视觉规则（去前缀路径），不受 platformOnly 影响
+  assert.equal(findAnyVendor('Qwen/Qwen3-VL-8B-Instruct')?.vendor.id, 'qwen');
+});
+
+test('platformOnly 只拦全局匹配：URL 命中 Groq 平台时规则仍生效', () => {
+  const v = vendorForUrl('https://api.groq.com/openai/v1');
+  assert.equal(v?.id, 'groq');
+  assert.ok(modelSpec(v, 'qwen/qwen3-32b'), 'Groq 平台的 qwen/ 形式应命中自家规则');
 });
 
 /* ── 守护：别名表自洽（注入缺陷 → 变红） ───────────────────── */
