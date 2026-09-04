@@ -7,7 +7,9 @@
  */
 import { LEVEL_LABEL, DEFAULT_ROUTE_EFFORT, clampThinkingLevel, pickRouteEffort } from './levels.mjs';
 import { coversInput, hasVision, inferInput, unionInput } from './modalities.mjs';
-import { findAnyVendor, vendorForUrl, catalogRouteNames } from './vendors.mjs';
+import {
+  findVendorModel, vendorForUrl, vendorForCatalogRoute, catalogRouteNames,
+} from './vendors.mjs';
 import { compileModel, CompileError } from './compile.mjs';
 
 export const NS = 'llm-pi-ai';
@@ -29,8 +31,8 @@ export function clone(v) {
 export function classifyRoute(route, profile, catalogNames = catalogRouteNames()) {
   const models = profile?.models;
   if (Array.isArray(models) && models.length > 0) return 'gateway';
-  if (catalogNames.has(route)) return 'catalog';
   if (profile?.baseURL) return 'gateway';
+  if (catalogNames.has(route)) return 'catalog';
   return 'skip';
 }
 
@@ -68,8 +70,8 @@ export function decideBaseURL(current, rootStatus, v1Status) {
   return { baseURL: root, changed: root !== orig };
 }
 
-function compileKnown(modelId, api, overlay, includeIO) {
-  const hit = findAnyVendor(modelId);
+function compileKnown(modelId, api, overlay, includeIO, preferredVendor = null) {
+  const hit = findVendorModel(modelId, preferredVendor);
   if (!hit) return null;
   try {
     const r = compileModel({
@@ -101,6 +103,10 @@ function mergeEntry(existing, compiled) {
       if (merged) out[k] = merged;
       continue;
     }
+    if (k === 'compat') {
+      out[k] = { ...(out[k] ?? {}), ...v };
+      continue;
+    }
     if (out[k] === undefined) out[k] = v;
   }
   return out;
@@ -112,6 +118,10 @@ function overlayFromDeclared(d) {
   if (d.contextWindow != null) overlay.contextWindow = d.contextWindow;
   if (d.maxTokens != null) overlay.maxTokens = d.maxTokens;
   if (d.input) overlay.input = d.input;
+  // 端点明说这个模型没有推理参数时，不能按真值库写档位表 —— 平台通配规则
+  // （OpenRouter 的 /.*/）会把七档配给翻译/音乐等根本不思考的模型。
+  // 只认显式 false：多数网关不报 supported_parameters，那是 null，不能当否定。
+  if (d.supportsReasoning === false) overlay.expose = [];
   return Object.keys(overlay).length ? overlay : null;
 }
 
@@ -213,6 +223,7 @@ export function planGatewayRoute(route, profile, gw, stateSlice, defaultEffort =
   for (const id of prevIds) if (!currentIds.includes(id)) deleted.add(id);
 
   const api = next.api;
+  const preferredVendor = vendorForUrl(next.baseURL ?? '');
   const nextModels = [];
   const seen = new Set();
 
@@ -220,7 +231,7 @@ export function planGatewayRoute(route, profile, gw, stateSlice, defaultEffort =
     if (!m?.id || seen.has(m.id)) continue;
     seen.add(m.id);
     const overlay = overlayFromDeclared(gw?.declared?.[m.id]);
-    const compiled = compileKnown(m.id, api, overlay, includeIO);
+    const compiled = compileKnown(m.id, api, overlay, includeIO, preferredVendor);
     if (compiled) {
       const merged = mergeEntry(m, compiled);
       nextModels.push(merged);
@@ -243,7 +254,7 @@ export function planGatewayRoute(route, profile, gw, stateSlice, defaultEffort =
     for (const id of gw.ids ?? []) {
       if (!id || seen.has(id) || deleted.has(id)) continue;
       const overlay = overlayFromDeclared(gw.declared?.[id]);
-      const compiled = compileKnown(id, api, overlay, includeIO);
+      const compiled = compileKnown(id, api, overlay, includeIO, preferredVendor);
       if (!compiled) continue;
       const entry = mergeEntry(null, compiled);
       nextModels.push(entry);
@@ -285,7 +296,9 @@ export function planGatewayRoute(route, profile, gw, stateSlice, defaultEffort =
   return { profile: next, notes, stateSlice: nextSlice };
 }
 
-export function planCatalogRoute(route, profile, catalogEntries, defaultEffort = DEFAULT_ROUTE_EFFORT, writeInput = true) {
+export function planCatalogRoute(
+  route, profile, catalogEntries, defaultEffort = DEFAULT_ROUTE_EFFORT, writeInput = true, stateSlice = null,
+) {
   const notes = [];
   const next = clone(profile) ?? {};
   if (Array.isArray(next.models) && next.models.length === 0) {
@@ -293,13 +306,16 @@ export function planCatalogRoute(route, profile, catalogEntries, defaultEffort =
     notes.push(`${route}: 去掉空的 models[]，避免覆盖内置目录`);
   }
   const api = next.api || 'openai-completions';
+  const preferredVendor = vendorForCatalogRoute(route);
   const overrides = { ...(next.modelOverrides ?? {}) };
+  const managedIds = new Set();
   let n = 0;
   let nInput = 0;
   for (const e of catalogEntries ?? []) {
     if (e.provider !== route) continue;
-    const compiled = compileKnown(e.id, api, null, writeInput);
+    const compiled = compileKnown(e.id, api, null, writeInput, preferredVendor);
     if (!compiled) continue;
+    managedIds.add(e.id);
     const prev = overrides[e.id];
     const only = { reasoningEfforts: compiled.entry.reasoningEfforts };
     const wantInput = writeInput ? unionInput(compiled.entry.input, prev?.input) : null;
@@ -314,15 +330,24 @@ export function planCatalogRoute(route, profile, catalogEntries, defaultEffort =
     if (!jsonEq(prev, merged)) n++;
     overrides[e.id] = merged;
   }
+  let removed = 0;
+  for (const id of stateSlice?.managedIds ?? []) {
+    if (managedIds.has(id) || !Object.hasOwn(overrides, id)) continue;
+    delete overrides[id];
+    removed++;
+  }
   next.modelOverrides = overrides;
   if (n) notes.push(`${route}: 更新 ${n} 条 modelOverrides${nInput ? `（含 ${nInput} 条视觉）` : ' 档位表'}`);
+  if (removed) notes.push(`${route}: 清理 ${removed} 条目录中已失效的插件 override`);
   // override 值本身没有 id 字段，补上让 clampNote 能指名道姓
   applyRouteEffort(route, next,
     Object.entries(overrides).map(([id, v]) => ({ id, ...v })), notes, defaultEffort);
   return {
     profile: next,
     notes,
-    stateSlice: { kind: 'catalog', modelIds: Object.keys(overrides), at: new Date().toISOString() },
+    stateSlice: {
+      kind: 'catalog', modelIds: Object.keys(overrides), managedIds: [...managedIds], at: new Date().toISOString(),
+    },
   };
 }
 
@@ -378,7 +403,9 @@ export function planSync({
         logs.push({ level: 'warn', msg: `${route}: 找不到 pi-ai 内置目录，官方路由跳过` });
         continue;
       }
-      const r = planCatalogRoute(route, profile, catalogEntries, defaultEffort, writeInput);
+      const r = planCatalogRoute(
+        route, profile, catalogEntries, defaultEffort, writeInput, managed[route]?.sync,
+      );
       for (const n of r.notes) logs.push({ level: 'info', msg: n });
       if (!jsonEq(r.profile, profile)) {
         nextProviders[route] = r.profile;

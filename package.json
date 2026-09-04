@@ -1,7 +1,7 @@
 {
   "name": "dsh-model-autoconfig",
-  "version": "0.8.1",
-  "description": "dsh web 插件：监视 Settings → Models，按真值库自动配置思考档位和视觉等能力",
+  "version": "0.9.0",
+  "description": "dsh web 插件：监视 Settings → Models，按真值库自动配置思考档位和视觉等能力（适配 Harness 0.1.2）",
   "keywords": [
     "dsh",
     "dsh-plugin",

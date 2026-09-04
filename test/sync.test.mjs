@@ -10,7 +10,7 @@ const names = catalogRouteNames();
 
 test('classify：目录名无列表 → catalog；有 models → gateway', () => {
   assert.equal(classifyRoute('deepseek', { apiKeyEnv: 'K' }, names), 'catalog');
-  assert.equal(classifyRoute('deepseek', { baseURL: 'http://x', apiKeyEnv: 'K' }, names), 'catalog');
+  assert.equal(classifyRoute('deepseek', { baseURL: 'http://x', apiKeyEnv: 'K' }, names), 'gateway');
   assert.equal(classifyRoute('deepseek', { models: [{ id: 'x' }] }, names), 'gateway');
   assert.equal(classifyRoute('deepseek', { models: [] }, names), 'catalog');
 });
@@ -491,4 +491,80 @@ test('用户设定的协议（无兜底标记）永远优先', () => {
     baseURL: 'https://api.anthropic.com', api: 'openai-responses',
   }, { fetchOk: false, ids: [] }, {});
   assert.equal(r.profile.api, 'openai-responses');
+});
+
+test('OpenRouter URL 优先采用平台七档和 thinkingFormat', () => {
+  const r = planGatewayRoute('or', {
+    baseURL: 'https://openrouter.ai/api/v1',
+    models: [{ id: 'anthropic/claude-opus-5', compat: { custom: true } }],
+  }, { fetchOk: false, ids: [] }, {});
+  const m = r.profile.models[0];
+  assert.equal(m.reasoningEfforts.off, 'none');
+  assert.equal(m.reasoningEfforts.minimal, 'minimal');
+  assert.equal(m.compat.thinkingFormat, 'openrouter');
+  assert.equal(m.compat.custom, true, '宿主已有 compat 字段必须保留');
+});
+
+test('Groq URL 能启用 platformOnly 的 Qwen 规则', () => {
+  const r = planGatewayRoute('groq-relay', {
+    baseURL: 'https://api.groq.com/openai/v1',
+    models: [{ id: 'qwen/qwen3-32b' }],
+  }, { fetchOk: false, ids: [] }, {});
+  assert.deepEqual(r.profile.models[0].reasoningEfforts, { off: 'none', high: 'default' });
+});
+
+test('OpenRouter catalog 使用平台规则而不是底层厂商规则', () => {
+  const r = planCatalogRoute('openrouter', {}, [
+    { provider: 'openrouter', id: 'anthropic/claude-opus-5', model: { input: ['text', 'image'] } },
+  ]);
+  const efforts = r.profile.modelOverrides['anthropic/claude-opus-5'].reasoningEfforts;
+  assert.equal(efforts.off, 'none');
+  assert.equal(efforts.minimal, 'minimal');
+});
+
+test('端点自报不支持推理时，不按平台通配规则写假档位', () => {
+  // OpenRouter 的 /.*/ 通配层会把七档配给所有模型 —— 实测 427 个模型里有
+  // 128 个 supported_parameters 不含 reasoning（翻译、音乐、OCR 等）。
+  const r = planGatewayRoute('or', {
+    baseURL: 'https://openrouter.ai/api/v1',
+  }, {
+    fetchOk: true,
+    ids: ['tencent/hy-mt2-7b', 'anthropic/claude-opus-5'],
+    declared: {
+      'tencent/hy-mt2-7b': { supportsReasoning: false },
+      'anthropic/claude-opus-5': { supportsReasoning: true },
+    },
+  }, {});
+  const mt = r.profile.models.find((m) => m.id === 'tencent/hy-mt2-7b');
+  const opus = r.profile.models.find((m) => m.id === 'anthropic/claude-opus-5');
+  assert.equal(mt.reasoningEfforts, false, '端点明说没有推理参数，不能配七档');
+  assert.equal(mt.compat.supportsReasoningEffort, false);
+  assert.equal(opus.reasoningEfforts.off, 'none', '端点说支持的仍按平台规则配满');
+});
+
+test('端点未声明推理支持时不做否定推断', () => {
+  const r = planGatewayRoute('or', {
+    baseURL: 'https://openrouter.ai/api/v1',
+  }, {
+    fetchOk: true,
+    ids: ['anthropic/claude-opus-5'],
+    declared: { 'anthropic/claude-opus-5': { supportsReasoning: null } },
+  }, {});
+  assert.equal(r.profile.models[0].reasoningEfforts.off, 'none',
+    'supportsReasoning 为 null 是「没报」，不是「不支持」');
+});
+
+test('catalog 只清理 state 证明由插件管理的失效 override', () => {
+  const r = planCatalogRoute('deepseek', {
+    modelOverrides: {
+      'deepseek-v4-flash': { reasoningEfforts: { high: 'high' } },
+      'removed-by-catalog': { reasoningEfforts: { high: 'high' } },
+      'user-custom': { contextWindow: 123 },
+    },
+  }, [{ provider: 'deepseek', id: 'deepseek-v4-flash', model: { input: ['text'] } }],
+  undefined, true, { managedIds: ['deepseek-v4-flash', 'removed-by-catalog'] });
+  assert.ok(r.profile.modelOverrides['deepseek-v4-flash']);
+  assert.equal(r.profile.modelOverrides['removed-by-catalog'], undefined);
+  assert.equal(r.profile.modelOverrides['user-custom'].contextWindow, 123);
+  assert.deepEqual(r.stateSlice.managedIds, ['deepseek-v4-flash']);
 });

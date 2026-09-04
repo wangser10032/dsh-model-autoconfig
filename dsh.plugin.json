@@ -1,6 +1,6 @@
 {
   "id": "model-autoconfig",
-  "version": "0.8.1",
+  "version": "0.9.0",
   "main": "src/plugin.mjs",
   "profile": "web",
   "description": "监视 Settings → Models：自动补思考档位和视觉等 input 能力"

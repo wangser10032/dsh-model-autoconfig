@@ -62,23 +62,27 @@ export const VENDORS = [
     thinkingFormat: 'openai',
     source: 'https://developers.openai.com/api/docs/guides/reasoning',
     models: [
-      { match: /^gpt-5\.6(-|$)/i, contextWindow: 1050000, maxTokens: 128000,
+      { match: /^gpt-5\.6(-|$)/i, exclude: /codex/i, contextWindow: 1050000, maxTokens: 128000,
         input: ['text', 'image'],
         efforts: { off: 'none', low: 'low', medium: 'medium', high: 'high', xhigh: 'xhigh', max: 'max' },
         note: 'gpt-5.6 Sol/Terra/Luna 档位一致；none 走 off 档（pi-ai 无 none 档位名）' },
-      { match: /^gpt-5\.5(-|$)/i, contextWindow: 1050000, maxTokens: 128000,
+      { match: /^gpt-5\.5(-|$)/i, exclude: /codex/i, contextWindow: 1050000, maxTokens: 128000,
         input: ['text', 'image'],
         efforts: { off: 'none', low: 'low', medium: 'medium', high: 'high', xhigh: 'xhigh' },
         note: '封顶到 xhigh，无 max' },
-      { match: /^gpt-5\.[1-4](-|$)/i, contextWindow: 400000, maxTokens: 128000,
+      { match: /^gpt-5\.[1-4](-|$)/i, exclude: /codex/i, contextWindow: 400000, maxTokens: 128000,
         input: ['text', 'image'],
         efforts: { off: 'none', low: 'low', medium: 'medium', high: 'high' },
         note: '5.1 起用 none，且不再支持 minimal' },
-      { match: /^gpt-5(-|$)/i,
+      { match: /^gpt-5(?!-\d)(-|$)/i, exclude: /codex/i,
         forcedThinking: '初代 gpt-5 的 reasoning_effort 只有 minimal/low/medium/high，没有 none；minimal 仍会推理。none 是 5.1 才引入的', contextWindow: 400000, maxTokens: 128000,
         input: ['text', 'image'],
         efforts: { minimal: 'minimal', low: 'low', medium: 'medium', high: 'high' },
         note: '初代 gpt-5 有 minimal 但没有 none/off —— 与 5.1+ 是代际替换，不可合并' },
+      // 官方别名 chat-latest（OpenRouter 写作 gpt-chat-latest）：Instant 非推理模型
+      { match: /^(gpt-)?chat-latest$/i, contextWindow: 400000, maxTokens: 128000, input: ['text', 'image'],
+        efforts: {},
+        note: '官方目录：指向 ChatGPT 当前 Instant 非推理模型、底层快照定期更新；无 reasoning 控制、图像仅输入' },
     ],
   },
   {
@@ -138,7 +142,7 @@ export const VENDORS = [
         efforts: { off: 'none', minimal: 'minimal', low: 'low', medium: 'medium',
                    high: 'high', xhigh: 'xhigh', max: 'max' },
         note: 'GLM-5.2+ 支持 7 档，默认 max' },
-      { match: /^glm-(5|4\.[567])/i, contextWindow: 200000, maxTokens: 128000, input: ['text'],
+      { match: /^glm-(5(?![._-]?\d)|4\.[567])/i, contextWindow: 200000, maxTokens: 128000, input: ['text'],
         efforts: { off: null, high: 'high' },
         note: '5.2 以下只有 thinking 开关，无离散档位' },
     ],
@@ -155,9 +159,28 @@ export const VENDORS = [
       { match: /^qwen3\.8-max/i, contextWindow: 1000000, maxTokens: 131072, input: ['text'],
         efforts: { off: null, low: 'low', medium: 'medium', xhigh: 'xhigh' },
         note: '仅 qwen3.8-max 有离散档位（low/medium/xhigh，默认 xhigh）；与 thinking_budget 互斥' },
+      // flash 系列与 plus 同为开关式（无 reasoning_effort），但输出上限按代际不同：
+      // 3.8-flash 131072，3.5/3.6/3.7-flash 均为 65536（2026-09-04 /models 自报）
+      { match: /^qwen3\.8-flash/i, contextWindow: 1000000, maxTokens: 131072, input: ['text', 'image'],
+        efforts: { off: null, high: 'high' },
+        note: '只有 enable_thinking 开关，无离散档位；百炼 qwen3.5+ 支持图片输入' },
+      { match: /^qwen3\.[567]-flash/i, contextWindow: 1000000, maxTokens: 65536, input: ['text', 'image'],
+        efforts: { off: null, high: 'high' },
+        note: '只有 enable_thinking 开关，无离散档位' },
       { match: /^qwen3\.[567]-(max|plus)/i, contextWindow: 1000000, maxTokens: 131072, input: ['text'],
         efforts: { off: null, high: 'high' },
         note: '只有 enable_thinking 开关 + thinking_budget(1–32768)，无离散档位' },
+      // ── 开源权重版（HuggingFace 官方卡，2026-09-05 核对）────────
+      { match: /^qwen3\.8-27b/i, contextWindow: 1000000, maxTokens: 131072, input: ['text', 'image'],
+        efforts: { off: null, low: 'low', medium: 'medium', xhigh: 'xhigh' },
+        note: '开源版 effort 枚举只有 low/medium/xhigh（默认 xhigh），枚举本身无 off/none 值 —— 关思考走 enable_thinking（thinkingFormat: qwen）；视觉为开源版新增' },
+      { match: /^qwen3\.8-2\.4t/i, contextWindow: 1010000, maxTokens: 262144, input: ['text'],
+        forcedThinking: '官方卡原文 requires thinking mode for all interactions —— 开源版连 enable_thinking=False 都不支持',
+        efforts: { low: 'low', medium: 'medium', xhigh: 'xhigh' },
+        note: 'Qwen3.8-2.4T-A95B（Qwen3.8-Max 开源版，95B 激活）；视觉输入与非思考模式是官方 API 版独有' },
+      { match: /^qwen3\.[56]-\d/i, contextWindow: 1010000, maxTokens: null, input: ['text', 'image'],
+        efforts: { off: null, high: 'high' },
+        note: '3.5/3.6 开源尺寸版（9b/27b/35b-a3b 等）：无 reasoning_effort，仅 enable_thinking 开关（默认开）；262k 原生、YaRN 扩到 101 万；输出无官方硬上限，以端点自报为准' },
     ],
     warn: '开启思考时 max_tokens 被限 32768，长输出需改用 max_completion_tokens',
   },
@@ -201,6 +224,10 @@ export const VENDORS = [
         forcedThinking: 'xAI 文档原文「Reasoning cannot be disabled.」', contextWindow: 2000000, maxTokens: 1800000, input: ['text', 'image'],
         efforts: { low: 'low', medium: 'medium', high: 'high', xhigh: 'xhigh' },
         note: '特殊语义：此模型上 reasoning.effort 控制的是协作 agent 数量（对应 4/16 个 agent）而非思考深度 —— 档位有真实效果，但含义与普通模型不同' },
+      // grok-4.3 推理可关闭（注册表 effort 枚举含 none），与 4.5/4.6 相反
+      { match: /^grok-4\.3(-|$)/i, contextWindow: 1000000, maxTokens: null, input: ['text', 'image'],
+        efforts: { off: 'none', low: 'low', medium: 'medium', high: 'high', xhigh: 'xhigh' },
+        note: '官方模型注册表 reasoningEffortOptions = none/low/medium/high/xhigh，默认 low；输出上限官方未公布，以端点自报为准。普通版 grok-4.20 无 effort 参数（开关靠选模型变体），不编码' },
       { match: /^grok-4\.[6-9]/i,
         forcedThinking: 'xAI 文档原文「Reasoning cannot be disabled.」', contextWindow: 500000, maxTokens: 128000, input: ['text', 'image'],
         efforts: { low: 'low', medium: 'medium', high: 'high', xhigh: 'xhigh' },
@@ -262,6 +289,101 @@ export const VENDORS = [
         note: '2.5 Pro 思考不可关闭（预算区间 128–32768）' },
       { match: /^gemini-2\.5/i, contextWindow: 1048576, maxTokens: 65536, input: ['text', 'image'],
         efforts: { off: 'none', low: 'low', medium: 'medium', high: 'high' } },
+      // Gemma 4：模板级 enable_thinking 开关，默认关闭思考（不发即关），无 effort 档位
+      { match: /^gemma-4-/i, contextWindow: 262144, maxTokens: null, input: ['text', 'image'],
+        efforts: { off: null, high: 'high' },
+        note: '官方 thinking 文档：enable_thinking 模板开关、无 effort 参数，默认关；256k 上下文；输出上限官方未公布，以端点自报为准' },
+    ],
+  },
+  {
+    id: 'tencent', catalogProviders: [], label: '腾讯混元',
+    match: [/api\.hunyuan\.cloud\.tencent\.com/i], api: 'openai-completions',
+    source: 'https://cloud.tencent.com/document/product/1823/131208',
+    models: [
+      { match: /^hy3(-|$)/i, contextWindow: 262144, maxTokens: 128000, input: ['text'],
+        efforts: { off: 'none', low: 'low', high: 'high' },
+        note: 'TokenHub：reasoning_effort 三档 low/medium/high、hy3 默认 high；官方端点自报支持 none/low/high（medium 是否独立存在未确认，不暴露）；thinking.type 可开关；输出上限取官方端点自报' },
+      { match: /^hy4/i, contextWindow: 1048576, maxTokens: 64000, input: ['text'],
+        efforts: { off: 'none', high: 'high' },
+        note: 'TokenHub 表格：默认 high，官方列 none/high（端点另报 low，官方表未列，不暴露）；1M 上下文' },
+    ],
+  },
+  {
+    id: 'mistral', catalogProviders: [], label: 'Mistral',
+    match: [/api\.mistral\.ai/i], api: 'openai-completions',
+    source: 'https://huggingface.co/mistralai/Mistral-Medium-3.5-128B',
+    models: [
+      { match: /^mistral-medium-3-5/i, contextWindow: 256000, maxTokens: null, input: ['text', 'image'],
+        efforts: { off: 'none', high: 'high' },
+        note: '官方卡示例代码强制校验 REASONING_EFFORT ∈ {none, high}；API 默认档与输出上限未公布，以端点自报为准' },
+    ],
+  },
+  {
+    id: 'nvidia', catalogProviders: [], label: 'NVIDIA Nemotron',
+    match: [/integrate\.api\.nvidia\.com/i], api: 'openai-completions',
+    source: 'https://build.nvidia.com/nvidia/nemotron-3-super-120b-a12b/modelcard',
+    models: [
+      { match: /^nemotron-3\.5-lightning/i, contextWindow: 1000000, maxTokens: null, input: ['text'],
+        efforts: { off: null, high: 'high' },
+        note: '官方卡：enable_thinking 模板开关（默认开）、无 effort 档位；1M 上下文、无视觉；输出上限未公布' },
+      { match: /^nemotron-3-ultra/i, contextWindow: 1000000, maxTokens: null, input: ['text'],
+        efforts: { off: null, high: 'high' },
+        note: '同 3.5-Lightning：仅 enable_thinking 开关（默认开）' },
+      { match: /^nemotron-3-super/i, contextWindow: 1000000, maxTokens: null, input: ['text'],
+        efforts: { off: null, high: 'high' },
+        note: 'build 卡明示 enable_thinking 默认 True；上下文取家族 1M（该尺寸未单独公布）' },
+    ],
+  },
+  {
+    // 美团 LongCat：官方 API 主机未在文档中公布，match 留空 = 仅按模型 id 全局匹配
+    id: 'meituan', catalogProviders: [], label: '美团 LongCat',
+    match: [], api: 'openai-completions',
+    source: 'https://longcat.chat/platform/docs',
+    models: [
+      { match: /^longcat-2\.0/i, contextWindow: 1000000, maxTokens: 131072, input: ['text'],
+        efforts: { off: null, high: 'high' },
+        note: '官方文档：thinking.type = enabled/disabled 开关（无中间档、无 effort 参数），off 走 disabled；1M 上下文、128K 输出；无视觉声明' },
+    ],
+  },
+  {
+    // 火山方舟：所有模型接受全部 7 档取值，但部分档位被服务端静默映射（官方映射表
+    // 2026-09-05 原文核对，行对齐按表格单元格分组确认）。真实档位按映射结果收录，
+    // 被映射的档位进 collapses，绝不作为可选档写出。
+    id: 'doubao', catalogProviders: [], label: '火山方舟 豆包/Seed',
+    match: [/ark\.cn-[a-z-]+\.volces\.com/i], api: 'openai-completions',
+    source: 'https://www.volcengine.com/docs/82379/1449737',
+    models: [
+      // 组A：minimal 关思考、none→minimal；xhigh/max→high。真实档 low/medium/high，默认 high
+      { match: /^doubao-seed-(evolving|2-1-pro)/i, contextWindow: 1048576, maxTokens: 262144, input: ['text', 'image'],
+        efforts: { off: 'minimal', low: 'low', medium: 'medium', high: 'high' },
+        collapses: { xhigh: 'high', max: 'high' },
+        note: '方舟映射表：off 发 minimal（关思考）；xhigh/max 服务端映射为 high —— 假档位不暴露；1M 上下文/256k 回答，支持视觉' },
+      // 组A 同映射：turbo 为 256k 上下文
+      { match: /^doubao-seed-2-1-turbo/i, contextWindow: 262144, maxTokens: 262144, input: ['text', 'image'],
+        efforts: { off: 'minimal', low: 'low', medium: 'medium', high: 'high' },
+        collapses: { xhigh: 'high', max: 'high' },
+        note: '同 evolving/2-1-pro 映射；256k 上下文、256k 回答' },
+      // 组B（2-0 系）：映射与组A相同，默认 medium。lite 的最大回答两处来源不一致
+      // （32k 与 128k），输出上限留 null 以端点自报为准
+      { match: /^doubao-seed-2-0/i, contextWindow: 262144, maxTokens: null, input: ['text', 'image'],
+        efforts: { off: 'minimal', low: 'low', medium: 'medium', high: 'high' },
+        collapses: { xhigh: 'high', max: 'high' },
+        note: '2-0 lite/mini/pro/code-preview：映射同组A（默认 medium）；256k 上下文；输出上限官方口径不一致，以端点自报为准' },
+      // 组C：glm-5-2 方舟版 —— none/minimal 关思考、low/medium→high、xhigh→max。真实档 off/high/max，默认 high
+      { match: /^glm-5-2/i, contextWindow: null, maxTokens: null, input: ['text'],
+        efforts: { off: 'none', high: 'high', max: 'max' },
+        collapses: { minimal: 'off', low: 'high', medium: 'high', xhigh: 'max' },
+        note: '方舟版 glm-5-2-260617 与智谱官方档位不同：上下文/输出官方页两处口径不一致，以端点自报为准' },
+      // 组D：ga 版 —— none/minimal 关思考、medium→low、xhigh→high。真实档 off/low/high，默认 high
+      { match: /^deepseek-v4-(pro|flash)-ga/i, contextWindow: 1048576, maxTokens: 393216, input: ['text'],
+        efforts: { off: 'none', low: 'low', high: 'high' },
+        collapses: { minimal: 'off', medium: 'low', xhigh: 'high' },
+        note: '方舟 ga 版映射：medium 静默降为 low、xhigh 静默压为 high；1M 上下文/384k 回答，纯文本' },
+      // 组E：260425 版 —— minimal 关思考、none→minimal、low/medium→high、xhigh→max。真实档 off/high/max，默认 high
+      { match: /^deepseek-v4-(pro|flash)-260425/i, contextWindow: 1048576, maxTokens: 393216, input: ['text'],
+        efforts: { off: 'minimal', high: 'high', max: 'max' },
+        collapses: { low: 'high', medium: 'high', xhigh: 'max' },
+        note: '方舟 260425 版映射：与 ga 版真实档不同（off/high/max）；deepseek 官方直连档位见 deepseek 厂商' },
     ],
   },
 ];
@@ -276,6 +398,11 @@ export function vendorById(id) {
   return VENDORS.find((v) => v.id === id) ?? null;
 }
 
+/** 按 pi-ai 内置目录的 provider 名反查厂商。 */
+export function vendorForCatalogRoute(route) {
+  return VENDORS.find((v) => v.catalogProviders?.includes(route)) ?? null;
+}
+
 /** pi-ai 内置目录的 provider 名（route 命中这些就走 modelOverrides，禁止写 models[]）。 */
 export function catalogRouteNames() {
   return new Set(VENDORS.flatMap((v) => v.catalogProviders ?? []));
@@ -285,7 +412,7 @@ export function catalogRouteNames() {
 export function modelSpec(vendor, modelId) {
   if (!vendor) return null;
   const id = vendor.stripIdPrefix ? String(modelId).replace(/^[^/]+\//, '') : String(modelId);
-  return vendor.models.find((m) => m.match.test(id)) ?? null;
+  return vendor.models.find((m) => m.match.test(id) && !m.exclude?.test(id)) ?? null;
 }
 
 /** 中转站常写成 vendor/model 或 org/vendor/model。查找时原样、去前缀都试。 */
@@ -309,6 +436,33 @@ export function modelIdCandidates(modelId) {
  * （去日期/量化/档位后缀、分隔符归一）。返回实际命中的候选 id 和解析路径，
  * 调用方据此写日志；发给网关的 id 永远保持原样，不由这里改。
  */
+function losesDeclaredVision(modelId, spec, via) {
+  if (via !== '去尾段') return false;
+  if (!/(^|[-_/.])(vision|visual|vl|omni|image)([-_/.]|$)/i.test(String(modelId))) return false;
+  return !spec.input?.includes('image');
+}
+
+function findInVendor(modelId, vendor) {
+  for (const { id, via } of resolveModelCandidates(modelId)) {
+    const spec = modelSpec(vendor, id);
+    if (!spec || losesDeclaredVision(modelId, spec, via)) continue;
+    return { vendor, spec, id, via };
+  }
+  return null;
+}
+
+/**
+ * 明确知道 URL/catalog 厂商时先按平台语义匹配；失败后再走聚合网关的全局兜底。
+ * OpenRouter 通配和 platformOnly 规则只能从 preferredVendor 入口进入。
+ */
+export function findVendorModel(modelId, preferredVendor = null) {
+  const vendor = typeof preferredVendor === 'string'
+    ? vendorById(preferredVendor)
+    : preferredVendor;
+  if (!vendor) return findAnyVendor(modelId);
+  return findInVendor(modelId, vendor) ?? findAnyVendor(modelId);
+}
+
 export function findAnyVendor(modelId) {
   const candidates = resolveModelCandidates(modelId);
   for (const { id, via } of candidates) {
@@ -317,7 +471,7 @@ export function findAnyVendor(modelId) {
       const spec = modelSpec(v, id);
       // 平台专属命名（如 Groq 的 qwen/ 前缀）不参与全局匹配：其命名空间
       // 与第三方平台的 org/model 前缀冲突，只该在 URL 命中该平台时使用。
-      if (!spec || spec.platformOnly) continue;
+      if (!spec || spec.platformOnly || losesDeclaredVision(modelId, spec, via)) continue;
       return { vendor: v, spec, id, via };
     }
   }

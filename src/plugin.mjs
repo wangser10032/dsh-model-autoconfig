@@ -1,6 +1,7 @@
 /**
  * dsh web 插件：监视 llm-pi-ai，把思考档位和视觉能力写进 Settings → Models。
  * 不注册自己的设置页。随 dsh 漂移的调用只放在 dshApi() / resolveKey()。
+ * 0.1.2：settings.describe/replace 仍是主路径；mutate 补 expectedRevision。
  */
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
@@ -43,34 +44,79 @@ function nsName(ns) {
   return ns.value ?? String(ns);
 }
 
+function namedLogger(ctx) {
+  if (typeof ctx?.logger === 'function') return ctx.logger(name);
+  return ctx?.logger ?? {};
+}
+
+function isRevisionConflict(error) {
+  return /revision|conflict|stale/i.test(`${error?.code ?? ''} ${error?.name ?? ''} ${error?.message ?? ''}`);
+}
+
 function dshApi(ctx) {
+  const descriptor = async (ns) => {
+    if (typeof ctx.settings?.describe !== 'function') return null;
+    const all = await ctx.settings.describe({ redactSecrets: true });
+    return (Array.isArray(all) ? all : []).find((d) => nsName(d.ns) === ns) ?? null;
+  };
+  const replaceChanged = async (ns, changed) => {
+    const hit = await descriptor(ns);
+    if (!hit) return false;
+    const user = hit.user && typeof hit.user === 'object' ? hit.user : {};
+    const providers = { ...(user.providers ?? {}), ...changed };
+    await ctx.settings.replace(ns, { ...user, providers }, hit.revision);
+    return true;
+  };
   return {
     hasSettings: !!ctx?.settings,
     async read(ns) {
-      if (typeof ctx.settings?.get === 'function') {
-        try { return ctx.settings.get(ns); } catch { /* 落到 describe */ }
-      }
-      if (ctx.settings?.describe) {
-        const all = ctx.settings.describe();
-        const hit = (Array.isArray(all) ? all : []).find((d) => nsName(d.ns) === NS);
-        return hit?.value ?? null;
-      }
+      const hit = await descriptor(ns);
+      if (hit) return hit.value ?? null;
+      if (typeof ctx.settings?.get === 'function') return ctx.settings.get(ns);
       return null;
     },
     async writeProviders(ns, allProviders, changed) {
+      if (typeof ctx.settings?.replace === 'function' && typeof ctx.settings?.describe === 'function') {
+        try {
+          if (await replaceChanged(ns, changed)) return;
+        } catch (error) {
+          if (!isRevisionConflict(error)) throw error;
+          if (await replaceChanged(ns, changed)) return;
+          throw error;
+        }
+      }
       const routes = Object.keys(changed);
       if (typeof ctx.settings?.mutate === 'function') {
         const ops = routes.map((route) => ({
           op: 'set', path: ['providers', route], value: changed[route],
         }));
-        try { await ctx.settings.mutate(ns, ops); return; } catch { /* 试 update */ }
+        const hit = await descriptor(ns);
+        // 0.1.2+ mutate 带 expectedRevision；旧宿主忽略第三参或只收两参。
+        if (hit?.revision != null) {
+          try {
+            await ctx.settings.mutate(ns, ops, hit.revision);
+            return;
+          } catch (error) {
+            if (isRevisionConflict(error)) {
+              const retry = await descriptor(ns);
+              if (retry?.revision != null) {
+                await ctx.settings.mutate(ns, ops, retry.revision);
+                return;
+              }
+            }
+            try {
+              await ctx.settings.mutate(ns, ops);
+              return;
+            } catch {
+              throw error;
+            }
+          }
+        }
+        await ctx.settings.mutate(ns, ops);
+        return;
       }
       if (typeof ctx.settings?.update === 'function') {
-        try { await ctx.settings.update(ns, { providers: allProviders }); return; } catch { /* next */ }
-      }
-      if (typeof ctx.settings?.replace === 'function') {
-        const cur = (await this.read(ns)) ?? {};
-        await ctx.settings.replace(ns, { ...cur, providers: allProviders });
+        await ctx.settings.update(ns, { providers: allProviders });
         return;
       }
       throw new Error('当前 dsh 版本未暴露 settings 写接口');
@@ -85,14 +131,18 @@ function guessKeyEnv(route, profile) {
 
 async function resolveKey(ctx, apiKeyEnv) {
   if (!apiKeyEnv) return undefined;
-  if (ctx.credentials?.resolve) {
+  let credentials = ctx.credentials;
+  if (!credentials && typeof ctx.get === 'function') {
+    try { credentials = ctx.get('credentials'); } catch { /* 服务未注册 */ }
+  }
+  if (credentials?.resolve) {
     try {
       let ref = apiKeyEnv;
       try {
         const cred = await import('@deepseek-ai/dsh-credentials');
         if (typeof cred.credentialRef === 'function') ref = cred.credentialRef(apiKeyEnv);
       } catch { /* 无此包则直接用名字 */ }
-      const hit = await ctx.credentials.resolve(ref);
+      const hit = await credentials.resolve(ref);
       if (hit?.value) return hit.value;
     } catch { /* 落到环境变量 */ }
   }
@@ -106,7 +156,7 @@ function loadCatalogEntries(piAiDataDir) {
   catch { return { entries: null }; }
 }
 
-async function probeGateway(ctx, route, profile, log) {
+async function probeGateway(ctx, route, profile, log, signal) {
   const raw = String(profile.baseURL ?? '').trim();
   const existing = Array.isArray(profile.models) ? profile.models.filter((m) => m?.id) : [];
   const trimmed = raw ? normalizeEndpoint(raw) : '';
@@ -125,8 +175,8 @@ async function probeGateway(ctx, route, profile, log) {
   if (stripped) log('info', `${route}: 规范化地址 ${raw} → ${trimmed}`);
   if (!/\/v1$/i.test(trimmed)) {
     const [rootSt, v1St] = await Promise.all([
-      pingModels(trimmed, key),
-      pingModels(`${trimmed}/v1`, key),
+      pingModels(trimmed, key, undefined, signal),
+      pingModels(`${trimmed}/v1`, key, undefined, signal),
     ]);
     const d = decideBaseURL(trimmed, rootSt, v1St);
     if (d.changed) log('info', `${route}: 补 /v1（根路径 ${rootSt || '失败'}，/v1 ${v1St || '失败'}）`);
@@ -137,7 +187,7 @@ async function probeGateway(ctx, route, profile, log) {
     return { fetchOk: false, ids: [], declared: {}, baseURL };
   }
   try {
-    const rows = await listModels(baseURL, key);
+    const rows = await listModels(baseURL, key, signal);
     return {
       fetchOk: true,
       ids: rows.map((r) => r.id),
@@ -145,18 +195,25 @@ async function probeGateway(ctx, route, profile, log) {
       baseURL,
     };
   } catch (e) {
+    if (signal?.aborted) throw e;
     log('error', `${route}: GET ${baseURL}/models 失败（${e.message}）。可在 Settings 里手动添加模型，档位仍会自动配`);
     return { fetchOk: false, ids: [], declared: {}, baseURL };
   }
 }
 
-export async function syncOnce(ctx, config, reason, api = dshApi(ctx)) {
+function stopped(runtime) {
+  return runtime?.signal?.aborted || runtime?.isDisposed?.();
+}
+
+export async function syncOnce(ctx, config, reason, api = dshApi(ctx), runtime = {}) {
+  const logger = runtime.logger ?? namedLogger(ctx);
   const log = (level, msg) => {
     if (level === 'debug') return;
-    ctx.logger?.[level]?.(`${TAG} ${msg}`);
+    logger?.[level]?.(`${TAG} ${msg}`);
   };
   const ns = NS;
   const section = await api.read(ns);
+  if (stopped(runtime)) return { changed: false, aborted: true };
   const providers = section?.providers;
   if (!providers || typeof providers !== 'object' || Array.isArray(providers)) {
     if (reason === 'ready') log('info', '还没有自定义模型配置。在 Settings → Models 保存 URL 和密钥后会自动配档位');
@@ -175,8 +232,9 @@ export async function syncOnce(ctx, config, reason, api = dshApi(ctx)) {
 
   const gatewayRoutes = Object.keys(providers).filter((r) => kinds[r] === 'gateway');
   const probed = await Promise.all(
-    gatewayRoutes.map((route) => probeGateway(ctx, route, providers[route], log)),
+    gatewayRoutes.map((route) => probeGateway(ctx, route, providers[route], log, runtime.signal)),
   );
+  if (stopped(runtime)) return { changed: false, aborted: true };
   const gateways = Object.fromEntries(gatewayRoutes.map((r, i) => [r, probed[i]]));
 
   const state = S.loadState();
@@ -202,11 +260,13 @@ export async function syncOnce(ctx, config, reason, api = dshApi(ctx)) {
   }
 
   if (!willWrite) {
-    if (planned.stateChanged) S.saveState(planned.state);
-    return { changed: false };
+    if (planned.stateChanged && !stopped(runtime)) S.saveState(planned.state);
+    return stopped(runtime) ? { changed: false, aborted: true } : { changed: false };
   }
 
+  if (stopped(runtime)) return { changed: false, aborted: true };
   await api.writeProviders(ns, planned.providers, written);
+  if (stopped(runtime)) return { changed: true, aborted: true };
   S.saveState(planned.state);
   log('info', `已写入 ${Object.keys(written).join(', ')}（${reason}）`);
   return { changed: true, routes: Object.keys(written), snapshot: planned.providers };
@@ -222,41 +282,63 @@ export function apply(ctx, config = {}) {
     ...config,
     autoFill: config.autoFill ?? config.autoFixMissingOff ?? DEFAULTS.autoFill,
   };
+  const logger = namedLogger(ctx);
   if (!ctx?.settings) {
-    ctx.logger?.warn?.(`${TAG} 当前上下文没有 settings 服务，插件空转`);
+    logger.warn?.(`${TAG} 当前上下文没有 settings 服务，插件空转`);
     return;
   }
   if (!cfg.autoFill) {
-    ctx.logger?.info?.(`${TAG} autoFill=false，只加载不写`);
+    logger.info?.(`${TAG} autoFill=false，只加载不写`);
     return;
   }
 
   const api = dshApi(ctx);
+  let serviceCtx = ctx;
   let busy = false;
   let pending = null;
   let timer;
   let lastWritten = null;
+  let disposed = false;
+  let activeController = null;
+
+  if (typeof ctx.inject === 'function') {
+    ctx.inject(['credentials'], (nextCtx) => {
+      if (!disposed) serviceCtx = nextCtx;
+    });
+  }
 
   const kick = async (reason) => {
+    if (disposed) return;
     if (busy) { pending = reason; return; }
     busy = true;
     try {
       do {
         const why = pending ?? reason;
         pending = null;
-        const result = await syncOnce(ctx, cfg, why, api);
+        activeController = new AbortController();
+        const result = await syncOnce(serviceCtx, cfg, why, api, {
+          logger,
+          signal: activeController.signal,
+          isDisposed: () => disposed,
+        });
         if (result?.changed && result.snapshot) lastWritten = JSON.stringify(result.snapshot);
-      } while (pending);
+      } while (pending && !disposed);
     } catch (e) {
-      ctx.logger?.error?.(`${TAG} ${e.stack ?? e.message ?? e}`);
+      if (!disposed && !activeController?.signal.aborted) {
+        logger.error?.(`${TAG} ${e.stack ?? e.message ?? e}`);
+      }
     } finally {
+      activeController = null;
       busy = false;
     }
   };
 
   const run = (reason, immediate = false) => {
+    if (disposed) return;
     clearTimeout(timer);
-    if (immediate) queueMicrotask(() => kick(reason));
+    if (immediate) queueMicrotask(() => {
+      if (!disposed) kick(reason);
+    });
     else timer = setTimeout(() => kick(reason), 250);
   };
 
@@ -267,8 +349,14 @@ export function apply(ctx, config = {}) {
     run('settings/updated');
   });
   ctx.on?.('llm/adapters-updated', () => run('adapters-updated'));
-  ctx.on?.('dispose', () => clearTimeout(timer));
-  ctx.logger?.info?.(`${TAG} 已加载。在 Settings → Models 保存 URL/密钥后自动配档位和视觉能力`);
+  ctx.on?.('dispose', () => {
+    disposed = true;
+    pending = null;
+    clearTimeout(timer);
+    activeController?.abort();
+  });
+  run('apply', true);
+  logger.info?.(`${TAG} 已加载。在 Settings → Models 保存 URL/密钥后自动配档位和视觉能力`);
 }
 
 export { catalogRouteNames, classifyRoute };

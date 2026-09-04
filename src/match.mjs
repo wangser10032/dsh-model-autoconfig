@@ -61,6 +61,13 @@ function prefixStripped(raw) {
  * 更精确的变换之后，且单个词干命中与否仍由真值库裁决。
  */
 const SOFT_TRANSFORMS = [
+  // 平台变体标记：OpenRouter 用 `:batch` / `:free` 标同一模型的不同履约方式
+  // （实测 427 个模型里 85 个带这类后缀）。多数规则是前缀匹配、顺带就命中了，
+  // 但带结尾锚的规则（gpt-5.5(-|$)）会被冒号挡住 —— openai/gpt-5.x:batch 全失配。
+  ['去平台变体后缀', (id) => {
+    const i = id.indexOf(':');
+    return i > 0 ? [id.slice(0, i)] : null;
+  }],
   ['去日期后缀', (id) => {
     for (const re of DATE_SUFFIXES) {
       const stripped = id.replace(re, '');

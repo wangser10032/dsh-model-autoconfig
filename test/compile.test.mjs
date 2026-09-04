@@ -186,10 +186,12 @@ test('--at 指定路径后，未知形状也能读写', () => {
 
 /* ── 「只填 url + key」路径 ─────────────────────────────── */
 
-test('每个厂商都映射了 pi-ai 内置目录的 provider 名', async () => {
+test('每个厂商都显式声明了 pi-ai 内置目录映射（可空 = 不参与目录路由）', async () => {
   const { VENDORS } = await import('../src/vendors.mjs');
   for (const v of VENDORS) {
-    assert.ok(Array.isArray(v.catalogProviders) && v.catalogProviders.length,
+    // 显式 [] 表示「未确认该厂商在 pi-ai 内置目录中的 provider 名」（tencent/mistral/nvidia），
+    // 目录路由不会用到它；缺字段或类型写错仍然要报错。
+    assert.ok(Array.isArray(v.catalogProviders),
       `${v.id} 缺 catalogProviders —— 不带 --models 时就没法自动列模型`);
   }
 });

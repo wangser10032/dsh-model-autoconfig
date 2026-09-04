@@ -2,6 +2,8 @@
 
 DeepSeek Harness **web 插件**：在 Settings → Models 里填 URL 和密钥之后，自动把思考档位、视觉能力、协议、上下文写对。
 
+**0.9.0 适配 Harness 0.1.2**：`settings.describe` / `replace` 仍是主写入路径；`mutate` 补传 `expectedRevision`（与 0.1.2 冲突检测契约对齐），旧宿主忽略第三参。
+
 ```bash
 dsh plugin --profile web add dsh-model-autoconfig
 ```

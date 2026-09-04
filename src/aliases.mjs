@@ -31,4 +31,10 @@ export const MODEL_ALIASES = {
   'glm-flash-latest': 'glm-5.3-flash',
   'gemini-pro-latest': 'gemini-3.1-pro-preview',
   'gemini-flash-latest': 'gemini-3.8-flash',
+
+  // ── OpenRouter bytedance-seed 前缀 → 火山方舟在服模型 id ─────────
+  //（档位来自方舟映射表，见 vendors.mjs doubao 厂商）
+  'seed-2-1-turbo': 'doubao-seed-2-1-turbo-260628',
+  'seed-2.0-code': 'doubao-seed-2-0-code-preview-260215',
+  'seed-2.0-lite': 'doubao-seed-2-0-lite-260428',
 };

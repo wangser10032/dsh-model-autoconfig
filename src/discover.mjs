@@ -4,12 +4,19 @@ import { parseDeclaredInput } from './modalities.mjs';
 const UA = { 'user-agent': 'dsh-model-autoconfig/0.6' };
 
 async function req(url, key, init = {}) {
-  const headers = { ...UA, ...(init.headers ?? {}) };
+  const { timeoutMs = 12000, signal: parentSignal, ...fetchInit } = init;
+  const headers = { ...UA, ...(fetchInit.headers ?? {}) };
   if (key) headers.authorization = `Bearer ${key}`;
   const ctl = new AbortController();
-  const t = setTimeout(() => ctl.abort(), init.timeoutMs ?? 12000);
-  try { return await fetch(url, { ...init, headers, signal: ctl.signal }); }
-  finally { clearTimeout(t); }
+  const abort = () => ctl.abort(parentSignal?.reason);
+  if (parentSignal?.aborted) abort();
+  else parentSignal?.addEventListener('abort', abort, { once: true });
+  const t = setTimeout(() => ctl.abort(), timeoutMs);
+  try { return await fetch(url, { ...fetchInit, headers, signal: ctl.signal }); }
+  finally {
+    clearTimeout(t);
+    parentSignal?.removeEventListener('abort', abort);
+  }
 }
 
 /** GET {base}/models 的 HTTP 状态；网络失败返回 0。用来判断要不要补 /v1。
@@ -18,14 +25,14 @@ async function req(url, key, init = {}) {
 const PING_TTL_MS = 45_000;
 const pingCache = new Map();
 
-export async function pingModels(baseURL, key, ttlMs = PING_TTL_MS) {
+export async function pingModels(baseURL, key, ttlMs = PING_TTL_MS, signal) {
   const url = `${String(baseURL).replace(/\/+$/, '')}/models`;
   const ck = `${url}\0${key ? '1' : '0'}`;
   const cached = pingCache.get(ck);
   if (cached && ttlMs > 0 && Date.now() - cached.at < ttlMs) return cached.status;
   let status;
   try {
-    const r = await req(url, key, { timeoutMs: 8000 });
+    const r = await req(url, key, { timeoutMs: 8000, signal });
     status = r.status;
   } catch {
     status = 0;
@@ -38,12 +45,12 @@ const listCache = new Map();
 const LIST_TTL_MS = 45_000;
 
 /** GET {baseURL}/models —— 顺便捡走网关自报的能力字段。 */
-export async function listModels(baseURL, key) {
+export async function listModels(baseURL, key, signal) {
   const url = `${String(baseURL).replace(/\/+$/, '')}/models`;
   const ck = `${url}\0${key ? '1' : '0'}`;
   const cached = listCache.get(ck);
   if (cached && Date.now() - cached.at < LIST_TTL_MS) return cached.rows;
-  const r = await req(url, key, { timeoutMs: 12000 });
+  const r = await req(url, key, { timeoutMs: 12000, signal });
   if (!r.ok) throw new Error(`GET /models -> ${r.status} ${r.statusText}`);
   const body = await r.json();
   const rows = Array.isArray(body?.data) ? body.data : Array.isArray(body) ? body : [];
