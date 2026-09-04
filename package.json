@@ -16,7 +16,7 @@
   "author": "wangser10032",
   "type": "module",
   "bin": {
-    "dsh-mac": "./bin/dsh-mac.mjs"
+    "dsh-mac": "bin/dsh-mac.mjs"
   },
   "main": "./src/plugin.mjs",
   "exports": {
