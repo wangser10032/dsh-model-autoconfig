@@ -145,7 +145,7 @@ test('发布入口、bundle patch 与插件名称保持一致', async () => {
   assert.equal(pkg.main, './src/plugin.mjs');
   assert.equal(pkg.exports['.'], './src/plugin.mjs');
   assert.equal(pkg.dsh.bundle.patch, './cordis.patch.yml');
-  assert.equal(pkg.version, '0.9.0');
+  assert.equal(pkg.version, '0.10.0');
   assert.equal(name, 'model-autoconfig');
   assert.match(patch, /id:\s*model-autoconfig/);
   assert.match(patch, /name:\s*dsh-model-autoconfig/);
