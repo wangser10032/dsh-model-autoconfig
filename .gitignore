@@ -5,3 +5,4 @@ node_modules/
 *_files/
 _tgz/
 .workbuddy/
+.agent-teams/
