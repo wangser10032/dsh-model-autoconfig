@@ -289,10 +289,41 @@ test('每条规则要么有 off 档，要么白纸黑字声明了不可关闭', 
   }
 });
 
-test('协议探测集收敛到最常见的三个', async () => {
-  const { SELF_DESCRIBING_APIS, SUPPORTED_APIS } = await import('../src/levels.mjs');
-  assert.deepEqual(SELF_DESCRIBING_APIS,
+test('协议探测集收敛到宿主手写路由允许的三个', async () => {
+  const { SELF_DESCRIBING_APIS, SUPPORTED_APIS, HOST_APIS, THINKING_FORMATS } = await import('../src/levels.mjs');
+  assert.deepEqual(HOST_APIS,
     ['openai-completions', 'openai-responses', 'anthropic-messages']);
-  // Gemini 靠域名认，不进探测集，但仍然配得出来
-  assert.ok(SUPPORTED_APIS.includes('google-generative-ai'));
+  assert.deepEqual(SELF_DESCRIBING_APIS, HOST_APIS);
+  assert.deepEqual(SUPPORTED_APIS, HOST_APIS);
+  assert.ok(!SUPPORTED_APIS.includes('google-generative-ai'),
+    '自定义路由不能写 google-generative-ai，宿主会整段拒绝');
+  assert.ok(!THINKING_FORMATS.includes('reasoning_effort'),
+    'thinkingFormat 没有 reasoning_effort，那是 wire 字段名');
+  assert.equal(THINKING_FORMATS.length, 11);
+});
+
+test('xAI / Groq 的 thinkingFormat 是 openai（不是非法的 reasoning_effort）', () => {
+  for (const id of ['xai', 'groq']) {
+    const v = vendorById(id);
+    assert.equal(v.thinkingFormat, 'openai', `${id} 必须写宿主枚举值 openai`);
+    const modelId = id === 'xai' ? 'grok-4.6' : 'openai/gpt-oss-120b';
+    const { entry } = compileModel({ vendor: v, modelId, api });
+    assert.equal(entry.compat.thinkingFormat, 'openai');
+  }
+});
+
+test('Google 自定义路由走 openai-completions，档位 wire 仍是 thinking_level 那套', () => {
+  const v = vendorById('google');
+  assert.equal(v.api, 'openai-completions');
+  assert.equal(v.thinkingFormat, 'openai');
+  const { entry } = compileModel({ vendor: v, modelId: 'gemini-3.8-flash', api: v.api });
+  assert.equal(entry.compat.thinkingFormat, 'openai');
+  assert.equal(entry.reasoningEfforts.minimal, 'minimal');
+  assert.equal(entry.reasoningEfforts.high, 'high');
+});
+
+test('Google 域名探测写 openai-completions 而不是 google-generative-ai', async () => {
+  const r = await probeProtocol('https://generativelanguage.googleapis.com/v1beta/openai', 'k', 'gemini-3.8-flash');
+  assert.equal(r.api, 'openai-completions');
+  assert.ok(!String(r.api).includes('google-generative-ai'));
 });

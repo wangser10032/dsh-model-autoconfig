@@ -14,16 +14,17 @@ export const LEVEL_LABEL = {
 };
 
 /**
- * dsh 的 llm-pi-ai config 允许的 compat.thinkingFormat 取值。
- * = pi-ai 的 PiThinkingFormat 减去 chat-template / qwen-chat-template
- * （后两者走 chatTemplateKwargs，配置层不暴露）。
+ * dsh 0.1.2 llm-pi-ai Config 允许的 compat.thinkingFormat 取值。
+ * 与宿主 lib/index.js SUPPORTED_THINKING_FORMATS 逐字一致。
+ * 没有 reasoning_effort —— 那是 pi-ai 的 wire 字段名，写进 settings 会被
+ * schemastery 整段拒绝。xAI / Groq 的顶层 reasoning_effort 走 'openai'。
  */
 export const THINKING_FORMATS = [
-  'reasoning_effort', 'openai', 'openrouter', 'deepseek',
-  'together', 'baseten', 'zai', 'qwen', 'string-thinking', 'ant-ling',
+  'openai', 'deepseek', 'openrouter', 'together', 'baseten', 'zai', 'qwen',
+  'chat-template', 'qwen-chat-template', 'string-thinking', 'ant-ling',
 ];
 
-/** pi-ai KnownApi 全集。 */
+/** pi-ai KnownApi 全集（含宿主手写路由不能用的协议，仅作对照）。 */
 export const KNOWN_APIS = [
   'openai-completions', 'openai-responses', 'anthropic-messages',
   'google-generative-ai', 'mistral-conversations', 'pi-messages',
@@ -32,19 +33,24 @@ export const KNOWN_APIS = [
 ];
 
 /**
- * 自动探测的协议集合 —— 最常见的三个，覆盖绝大多数官方端点和中转站。
- * 不带 --api 时只会在这三个里判定。
+ * 宿主 dsh 0.1.2 手写路由允许的协议 = supportedProtocols()。
+ * google-generative-ai 等只存在于 pi-ai 内置目录，自定义 URL 写进去会被拒。
  */
-export const SELF_DESCRIBING_APIS = [
+export const HOST_APIS = [
   'openai-completions', 'openai-responses', 'anthropic-messages',
 ];
 
 /**
- * 探测集之外、但仍然能配的协议：真值库按 URL 认出厂商时会直接采用，
- * 也可以用 --api 显式指定。google-generative-ai 留在这里而不是探测集里，
- * 是因为 Gemini 端点靠域名就能认出来，不需要发探测请求。
+ * 自动探测的协议集合 —— 与宿主手写路由允许的三个协议一致。
+ * 不带 --api 时只会在这三个里判定。
  */
-export const SUPPORTED_APIS = [...SELF_DESCRIBING_APIS, 'google-generative-ai'];
+export const SELF_DESCRIBING_APIS = [...HOST_APIS];
+
+/**
+ * 本工具会写入 settings 的协议。自定义路由只能用 HOST_APIS；
+ * Gemini 官方端点改走 OpenAI 兼容口径（openai-completions）。
+ */
+export const SUPPORTED_APIS = [...HOST_APIS];
 
 /**
  * 路由级思考默认档位的「愿望值」。dsh 请求路径不会 clamp：

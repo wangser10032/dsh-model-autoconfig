@@ -14,7 +14,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { VENDORS, modelSpec } from '../src/vendors.mjs';
-import { LEVELS, THINKING_FORMATS, KNOWN_APIS } from '../src/levels.mjs';
+import { LEVELS, THINKING_FORMATS, HOST_APIS } from '../src/levels.mjs';
 import { compileModel } from '../src/compile.mjs';
 
 /** 遍历全部厂商规则；label 用于让失败信息指到具体那一条。 */
@@ -84,8 +84,8 @@ test('声明了 forcedThinking 的规则不能同时提供 off 档', () => {
 
 test('厂商的 api 与 thinkingFormat 取值合法', () => {
   for (const v of VENDORS) {
-    assert.ok(KNOWN_APIS.includes(v.api),
-      `${v.id} 的 api "${v.api}" 不在 pi-ai KnownApi 全集里`);
+    assert.ok(HOST_APIS.includes(v.api),
+      `${v.id} 的 api "${v.api}" 不在宿主手写路由允许的三个协议里`);
     if (v.thinkingFormat != null) {
       assert.ok(THINKING_FORMATS.includes(v.thinkingFormat),
         `${v.id} 的 thinkingFormat "${v.thinkingFormat}" 不在 dsh 允许的集合里`);

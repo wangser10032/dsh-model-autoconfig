@@ -7,10 +7,10 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { audit, loadCatalog } from '../src/catalog.mjs';
+import { audit, findCatalogDir, loadCatalog } from '../src/catalog.mjs';
 
 const dir = mkdtempSync(join(tmpdir(), 'dsh-mac-catalog-'));
 const write = (name, obj) => writeFileSync(join(dir, name), JSON.stringify(obj));
@@ -27,6 +27,26 @@ test('解析出扁平模型数组，形状正确', () => {
     provider: 'deepseek', api: 'openai-completions', id: 'deepseek-v4-flash',
     model: { id: 'deepseek-v4-flash', reasoning: true },
   });
+});
+
+test('loadCatalog 跳过 .manifest.json 等点文件', () => {
+  write('.manifest.json', { schemaVersion: 3, files: {} });
+  const entries = loadCatalog(dir, 0);
+  assert.equal(entries.some((e) => e.provider === '.manifest' || e.provider === ''), false);
+  assert.equal(entries.length, 1);
+});
+
+test('findCatalogDir(piAiDataDir) 覆盖自动查找', () => {
+  assert.equal(findCatalogDir(dir), dir);
+});
+
+test('findCatalogDir 在真实 dsh 安装能定位 pi-ai 数据目录', () => {
+  const found = findCatalogDir();
+  assert.ok(found, '真实安装返回 null 是发布阻断：官方 catalog 路由会整轮跳过');
+  assert.ok(existsSync(join(found, 'deepseek.json')), `目录不像 pi-ai data：${found}`);
+  const entries = loadCatalog(found, 0);
+  assert.ok(entries.length > 10, `载入条目过少：${entries.length}`);
+  assert.equal(entries.some((e) => e.provider.startsWith('.')), false);
 });
 
 test('同一目录 45s 内命中缓存（返回同一引用，不再读盘）', () => {

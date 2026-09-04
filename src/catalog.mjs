@@ -11,7 +11,9 @@
  * 显式写入 `off: null` 即可绕过。
  */
 import { readdirSync, readFileSync, existsSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { createRequire } from 'node:module';
+import { dirname, join, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { LEVELS } from './levels.mjs';
@@ -35,6 +37,7 @@ function fastRoots() {
   return [
     process.cwd(),
     dsh,
+    join(dsh, 'profiles'),
     join(dsh, 'profiles', 'web'),
     process.env.APPDATA && join(process.env.APPDATA, 'npm'),
     join(h, 'AppData', 'Roaming', 'npm'),
@@ -58,10 +61,83 @@ function look(paths) {
   return null;
 }
 
+/** ESM 入口 dist/index.js → dist/providers/data；package.json → 同相对路径。 */
+function dirFromResolved(resolved) {
+  if (!resolved) return null;
+  const path = String(resolved).startsWith('file:')
+    ? fileURLToPath(resolved)
+    : String(resolved);
+  if (path.endsWith(`${sep}package.json`)) return join(dirname(path), REL);
+  return join(dirname(path), 'providers', 'data');
+}
+
+function dirFromResolveError(error) {
+  const msg = String(error?.message ?? '');
+  const m = msg.match(/([A-Za-z]:)?[/\\][^\s'"]*@earendil-works[/\\]pi-ai[/\\]package\.json/);
+  return m ? dirFromResolved(m[0]) : null;
+}
+
+/** CJS resolve：exports 只有 import 条件时会抛 ERR_PACKAGE_PATH_NOT_EXPORTED，路径仍在报错里。 */
+function requirePiAiDir(parent) {
+  try {
+    const req = createRequire(parent);
+    try {
+      return look([dirFromResolved(req.resolve('@earendil-works/pi-ai'))]);
+    } catch (error) {
+      const fromErr = look([dirFromResolveError(error)]);
+      if (fromErr) return fromErr;
+      try {
+        return requirePiAiDir(req.resolve('@deepseek-ai/dsh-llm-pi-ai'));
+      } catch {
+        return null;
+      }
+    }
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 真实 dsh 安装里 pi-ai 常被 pnpm 提升到 profiles/ 层（不是 profiles/web/）。
+ * 插件以 file: 链到工作区时 import.meta.url 不在 profile 模块图里，
+ * import.meta.resolve 会找不到包 —— 再按宿主 profile 的 package.json createRequire。
+ */
+function resolveInstalledDir() {
+  try {
+    const href = import.meta.resolve('@earendil-works/pi-ai');
+    const dir = look([dirFromResolved(href)]);
+    if (dir) return dir;
+  } catch (error) {
+    const dir = look([dirFromResolveError(error)]);
+    if (dir) return dir;
+  }
+
+  const homes = new Set([
+    process.env.DSH_HOME,
+    join(homedir(), '.dsh'),
+  ].filter(Boolean));
+  const parents = [];
+  for (const dsh of homes) {
+    parents.push(
+      join(dsh, 'profiles', 'web', 'package.json'),
+      join(dsh, 'profiles', 'web', 'dummy.js'),
+      join(dsh, 'package.json'),
+    );
+  }
+  parents.push(join(process.cwd(), 'package.json'));
+  for (const parent of parents) {
+    const dir = requirePiAiDir(parent);
+    if (dir) return dir;
+  }
+  return null;
+}
+
 /** 找到内置目录数据目录；找不到返回 null。结果按进程缓存，避免每次同步都 exec npm。 */
 export function findCatalogDir(extra) {
   if (extra) return look([extra, ...candidates(extra).slice(1)]);
   if (cachedDir !== undefined) return cachedDir;
+  const resolved = resolveInstalledDir();
+  if (resolved) { cachedDir = resolved; return resolved; }
   const hit = look(candidates());
   if (hit) { cachedDir = hit; return hit; }
   try {
@@ -92,7 +168,7 @@ export function loadCatalog(dir, ttlMs = CATALOG_TTL_MS) {
   }
   const out = [];
   for (const f of readdirSync(dir)) {
-    if (!f.endsWith('.json')) continue;
+    if (!f.endsWith('.json') || f.startsWith('.')) continue;
     const provider = f.slice(0, -5);
     let data;
     try { data = JSON.parse(readFileSync(join(dir, f), 'utf8')); } catch { continue; }

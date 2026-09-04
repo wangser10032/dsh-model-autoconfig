@@ -76,7 +76,9 @@ export async function listModels(baseURL, key, signal) {
 export async function probeProtocol(baseURL, key, sampleModel) {
   const base = baseURL.replace(/\/+$/, '');
   if (/\/anthropic\/?$/i.test(base)) return { api: 'anthropic-messages', how: 'URL 以 /anthropic 结尾' };
-  if (/generativelanguage\.googleapis\.com/i.test(base)) return { api: 'google-generative-ai', how: 'Google 端点' };
+  if (/generativelanguage\.googleapis\.com/i.test(base)) {
+    return { api: 'openai-completions', how: 'Google OpenAI 兼容端点（宿主手写路由不接受 google-generative-ai）' };
+  }
   if (!sampleModel) return { api: null, how: '无样本模型，无法探测', uncertain: true };
 
   try {

@@ -56,7 +56,7 @@ add 选项
   --key <secret>         API Key（会生成 apiKeyEnv 引用并打印 export 行）
   --key-env <NAME>       直接指定环境变量名，不传 --key 时用
   --api <protocol>       协议；不传则自动探测。探测集 = ${SELF_DESCRIBING_APIS.join(' / ')}
-                         ${C.d}（google-generative-ai 靠域名认，不用探测；显式指定也可以）${C.x}
+                         ${C.d}（Gemini 官方端点按 openai-completions 写，宿主不接受 google-generative-ai）${C.x}
   --default-effort <lv>  路由级默认思考档位，默认 ${DEFAULT_ROUTE_EFFORT}；--default-effort off 则默认不思考
   --vendor <id>          强制指定厂商真值（默认按 URL 猜；--models 里逐个也可用 id=vendor 形式）
   --models a,b,c         手动列出模型 id（网关没有 /models 接口时用）

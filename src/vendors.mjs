@@ -217,7 +217,7 @@ export const VENDORS = [
   },
   {
     id: 'xai', catalogProviders: ['xai'], label: 'xAI Grok',
-    match: [/api\.x\.ai/i], api: 'openai-completions', thinkingFormat: 'reasoning_effort',
+    match: [/api\.x\.ai/i], api: 'openai-completions', thinkingFormat: 'openai',
     source: 'https://docs.x.ai/docs/guides/reasoning',
     models: [
       { match: /^grok-4\.20-multi-agent/i,
@@ -242,7 +242,7 @@ export const VENDORS = [
   },
   {
     id: 'groq', catalogProviders: ['groq'], label: 'Groq',
-    match: [/api\.groq\.com/i], api: 'openai-completions', thinkingFormat: 'reasoning_effort',
+    match: [/api\.groq\.com/i], api: 'openai-completions', thinkingFormat: 'openai',
     source: 'https://console.groq.com/docs/reasoning',
     models: [
       { match: /gpt-oss/i,
@@ -272,8 +272,12 @@ export const VENDORS = [
   },
   {
     id: 'google', catalogProviders: ['google', 'google-vertex'], label: 'Google Gemini',
-    match: [/generativelanguage\.googleapis\.com/i], api: 'google-generative-ai',
-    source: 'https://ai.google.dev/gemini-api/docs/thinking',
+    // 宿主手写路由只接受 openai-completions|openai-responses|anthropic-messages，
+    // google-generative-ai 仅内置目录可用。自定义 URL 走 Gemini 的 OpenAI 兼容层
+    // （/v1beta/openai），档位 wire 值仍是 thinking_level / reasoning_effort 那套。
+    match: [/generativelanguage\.googleapis\.com/i], api: 'openai-completions',
+    thinkingFormat: 'openai',
+    source: 'https://ai.google.dev/gemini-api/docs/openai',
     models: [
       { match: /^gemini-3(\.\d+)?-?flash/i,
         forcedThinking: 'Gemini 3 系列 thinking_level 的地板是 minimal，官方明示「minimal does not guarantee that thinking is off」', contextWindow: 1048576, maxTokens: 65536,
