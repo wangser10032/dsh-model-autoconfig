@@ -1,0 +1,7 @@
+node_modules/
+*.tgz
+*.zip
+*.html
+*_files/
+_tgz/
+.workbuddy/

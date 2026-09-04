@@ -1,0 +1,279 @@
+/**
+ * dsh web 插件：监视 llm-pi-ai，把思考档位和视觉能力写进 Settings → Models。
+ * 不注册自己的设置页。随 dsh 漂移的调用只放在 dshApi() / resolveKey()。
+ */
+import { createRequire } from 'node:module';
+import { join } from 'node:path';
+import { findCatalogDir, loadCatalog } from './catalog.mjs';
+import { listModels, pingModels } from './discover.mjs';
+import { DEFAULT_ROUTE_EFFORT } from './levels.mjs';
+import * as S from './settings.mjs';
+import {
+  TAG, NS, classifyRoute, decideBaseURL, normalizeEndpoint, planSync,
+} from './sync.mjs';
+import { catalogRouteNames } from './vendors.mjs';
+
+export const name = 'model-autoconfig';
+export const inject = ['settings'];
+
+function trySchema() {
+  for (const from of [join(process.cwd(), 'package.json'), import.meta.url]) {
+    try {
+      const mod = createRequire(from)('@deepseek-ai/schemastery');
+      return mod.default ?? mod;
+    } catch { /* 测试环境或解析不到 */ }
+  }
+  return null;
+}
+
+const Schema = trySchema();
+/** Cordis 只接受 Standard Schema。普通对象当 Config 会在启动时崩。 */
+export const Config = Schema?.object?.({
+  autoFill: Schema.boolean().default(true)
+    .description('监视 Settings → Models，自动写入思考档位和视觉能力'),
+  piAiDataDir: Schema.string().default('')
+    .description('pi-ai 目录数据路径；自动查找失败时再填'),
+});
+
+const DEFAULTS = { autoFill: true, piAiDataDir: '' };
+
+function nsName(ns) {
+  if (ns == null) return '';
+  if (typeof ns === 'string') return ns;
+  return ns.value ?? String(ns);
+}
+
+function dshApi(ctx) {
+  return {
+    hasSettings: !!ctx?.settings,
+    async read(ns) {
+      if (typeof ctx.settings?.get === 'function') {
+        try { return ctx.settings.get(ns); } catch { /* 落到 describe */ }
+      }
+      if (ctx.settings?.describe) {
+        const all = ctx.settings.describe();
+        const hit = (Array.isArray(all) ? all : []).find((d) => nsName(d.ns) === NS);
+        return hit?.value ?? null;
+      }
+      return null;
+    },
+    async writeProviders(ns, allProviders, changed) {
+      const routes = Object.keys(changed);
+      if (typeof ctx.settings?.mutate === 'function') {
+        const ops = routes.map((route) => ({
+          op: 'set', path: ['providers', route], value: changed[route],
+        }));
+        try { await ctx.settings.mutate(ns, ops); return; } catch { /* 试 update */ }
+      }
+      if (typeof ctx.settings?.update === 'function') {
+        try { await ctx.settings.update(ns, { providers: allProviders }); return; } catch { /* next */ }
+      }
+      if (typeof ctx.settings?.replace === 'function') {
+        const cur = (await this.read(ns)) ?? {};
+        await ctx.settings.replace(ns, { ...cur, providers: allProviders });
+        return;
+      }
+      throw new Error('当前 dsh 版本未暴露 settings 写接口');
+    },
+  };
+}
+
+function guessKeyEnv(route, profile) {
+  if (profile?.apiKeyEnv) return profile.apiKeyEnv;
+  return `${String(route).toUpperCase().replace(/[^A-Z0-9]/g, '_')}_API_KEY`;
+}
+
+async function resolveKey(ctx, apiKeyEnv) {
+  if (!apiKeyEnv) return undefined;
+  if (ctx.credentials?.resolve) {
+    try {
+      let ref = apiKeyEnv;
+      try {
+        const cred = await import('@deepseek-ai/dsh-credentials');
+        if (typeof cred.credentialRef === 'function') ref = cred.credentialRef(apiKeyEnv);
+      } catch { /* 无此包则直接用名字 */ }
+      const hit = await ctx.credentials.resolve(ref);
+      if (hit?.value) return hit.value;
+    } catch { /* 落到环境变量 */ }
+  }
+  return process.env[apiKeyEnv];
+}
+
+function loadCatalogEntries(piAiDataDir) {
+  const dir = findCatalogDir(piAiDataDir || undefined);
+  if (!dir) return { entries: null };
+  try { return { entries: loadCatalog(dir) }; }
+  catch { return { entries: null }; }
+}
+
+async function probeGateway(ctx, route, profile, log) {
+  const raw = String(profile.baseURL ?? '').trim();
+  const existing = Array.isArray(profile.models) ? profile.models.filter((m) => m?.id) : [];
+  const trimmed = raw ? normalizeEndpoint(raw) : '';
+  const stripped = trimmed && trimmed !== raw.replace(/\/+$/, '');
+
+  // 主干：Settings 里已经有模型 id（原生页拉过或手加）——只配档位，不联网。
+  if (existing.length) {
+    if (stripped) log('info', `${route}: 规范化地址 ${raw} → ${trimmed}`);
+    return { fetchOk: false, ids: [], declared: {}, baseURL: stripped ? trimmed : raw };
+  }
+
+  if (!raw) return { fetchOk: false, ids: [], declared: {}, baseURL: raw };
+  const keyEnv = guessKeyEnv(route, profile);
+  const key = await resolveKey(ctx, keyEnv);
+  let baseURL = trimmed;
+  if (stripped) log('info', `${route}: 规范化地址 ${raw} → ${trimmed}`);
+  if (!/\/v1$/i.test(trimmed)) {
+    const [rootSt, v1St] = await Promise.all([
+      pingModels(trimmed, key),
+      pingModels(`${trimmed}/v1`, key),
+    ]);
+    const d = decideBaseURL(trimmed, rootSt, v1St);
+    if (d.changed) log('info', `${route}: 补 /v1（根路径 ${rootSt || '失败'}，/v1 ${v1St || '失败'}）`);
+    baseURL = d.baseURL;
+  }
+  if (!key) {
+    log('warn', `${route}: 列表还是空的，且没有可用密钥（${keyEnv}）。在 Settings → Models 保存密钥或手动添加模型`);
+    return { fetchOk: false, ids: [], declared: {}, baseURL };
+  }
+  try {
+    const rows = await listModels(baseURL, key);
+    return {
+      fetchOk: true,
+      ids: rows.map((r) => r.id),
+      declared: Object.fromEntries(rows.map((r) => [r.id, r.declared])),
+      baseURL,
+    };
+  } catch (e) {
+    log('error', `${route}: GET ${baseURL}/models 失败（${e.message}）。可在 Settings 里手动添加模型，档位仍会自动配`);
+    return { fetchOk: false, ids: [], declared: {}, baseURL };
+  }
+}
+
+export async function syncOnce(ctx, config, reason, api = dshApi(ctx)) {
+  const log = (level, msg) => {
+    if (level === 'debug') return;
+    ctx.logger?.[level]?.(`${TAG} ${msg}`);
+  };
+  const ns = NS;
+  const section = await api.read(ns);
+  const providers = section?.providers;
+  if (!providers || typeof providers !== 'object' || Array.isArray(providers)) {
+    if (reason === 'ready') log('info', '还没有自定义模型配置。在 Settings → Models 保存 URL 和密钥后会自动配档位');
+    return { changed: false };
+  }
+
+  const catalogNames = catalogRouteNames();
+  const kinds = Object.fromEntries(
+    Object.entries(providers).map(([r, p]) => [r, classifyRoute(r, p, catalogNames)]),
+  );
+  const needCatalog = Object.values(kinds).includes('catalog');
+  const { entries } = needCatalog
+    ? loadCatalogEntries(config.piAiDataDir)
+    : { entries: [] };
+  if (needCatalog && !entries) log('warn', '找不到 pi-ai 内置目录，官方路由本轮跳过');
+
+  const gatewayRoutes = Object.keys(providers).filter((r) => kinds[r] === 'gateway');
+  const probed = await Promise.all(
+    gatewayRoutes.map((route) => probeGateway(ctx, route, providers[route], log)),
+  );
+  const gateways = Object.fromEntries(gatewayRoutes.map((r, i) => [r, probed[i]]));
+
+  const state = S.loadState();
+  const planned = planSync({
+    providers,
+    state,
+    catalogNames,
+    catalogEntries: entries,
+    gateways,
+    defaultEffort: DEFAULT_ROUTE_EFFORT,
+  });
+
+  const written = {};
+  for (const route of Object.keys(providers)) {
+    if (!jsonEqSafe(planned.providers[route], providers[route])) written[route] = planned.providers[route];
+  }
+  const willWrite = Object.keys(written).length > 0;
+
+  for (const line of planned.logs) {
+    if (line.level === 'debug') continue;
+    if (line.level === 'info' && !willWrite) continue;
+    log(line.level === 'warn' ? 'warn' : line.level === 'error' ? 'error' : 'info', line.msg);
+  }
+
+  if (!willWrite) {
+    if (planned.stateChanged) S.saveState(planned.state);
+    return { changed: false };
+  }
+
+  await api.writeProviders(ns, planned.providers, written);
+  S.saveState(planned.state);
+  log('info', `已写入 ${Object.keys(written).join(', ')}（${reason}）`);
+  return { changed: true, routes: Object.keys(written), snapshot: planned.providers };
+}
+
+function jsonEqSafe(a, b) {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+export function apply(ctx, config = {}) {
+  const cfg = {
+    ...DEFAULTS,
+    ...config,
+    autoFill: config.autoFill ?? config.autoFixMissingOff ?? DEFAULTS.autoFill,
+  };
+  if (!ctx?.settings) {
+    ctx.logger?.warn?.(`${TAG} 当前上下文没有 settings 服务，插件空转`);
+    return;
+  }
+  if (!cfg.autoFill) {
+    ctx.logger?.info?.(`${TAG} autoFill=false，只加载不写`);
+    return;
+  }
+
+  const api = dshApi(ctx);
+  let busy = false;
+  let pending = null;
+  let timer;
+  let lastWritten = null;
+
+  const kick = async (reason) => {
+    if (busy) { pending = reason; return; }
+    busy = true;
+    try {
+      do {
+        const why = pending ?? reason;
+        pending = null;
+        const result = await syncOnce(ctx, cfg, why, api);
+        if (result?.changed && result.snapshot) lastWritten = JSON.stringify(result.snapshot);
+      } while (pending);
+    } catch (e) {
+      ctx.logger?.error?.(`${TAG} ${e.stack ?? e.message ?? e}`);
+    } finally {
+      busy = false;
+    }
+  };
+
+  const run = (reason, immediate = false) => {
+    clearTimeout(timer);
+    if (immediate) queueMicrotask(() => kick(reason));
+    else timer = setTimeout(() => kick(reason), 250);
+  };
+
+  ctx.on?.('ready', () => run('ready', true));
+  ctx.on?.('settings/updated', (ns, next) => {
+    if (nsName(ns) !== NS) return;
+    if (lastWritten && next?.providers && JSON.stringify(next.providers) === lastWritten) return;
+    run('settings/updated');
+  });
+  ctx.on?.('llm/adapters-updated', () => run('adapters-updated'));
+  ctx.on?.('dispose', () => clearTimeout(timer));
+  ctx.logger?.info?.(`${TAG} 已加载。在 Settings → Models 保存 URL/密钥后自动配档位和视觉能力`);
+}
+
+export { catalogRouteNames, classifyRoute };
+
+const plugin = Config
+  ? { name, inject, Config, apply }
+  : { name, inject, apply };
+export default plugin;

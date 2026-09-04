@@ -1,0 +1,39 @@
+{
+  "name": "dsh-model-autoconfig",
+  "version": "0.8.1",
+  "description": "dsh web 插件：监视 Settings → Models，按真值库自动配置思考档位和视觉等能力",
+  "type": "module",
+  "bin": {
+    "dsh-mac": "./bin/dsh-mac.mjs"
+  },
+  "main": "./src/plugin.mjs",
+  "exports": {
+    ".": "./src/plugin.mjs",
+    "./plugin": "./src/plugin.mjs",
+    "./lib": "./src/index.mjs",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "files": [
+    "src",
+    "bin",
+    "dsh.plugin.json",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "yaml": "^2.4.0"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  },
+  "license": "MIT"
+}

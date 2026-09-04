@@ -1,0 +1,8 @@
+# dsh-model-autoconfig bundle layer.
+# 装进 profile 后自动插入；用户可在 profile 的 cordis.patch.yml 里覆盖整行。
+- insert:
+    - id: model-autoconfig
+      name: dsh-model-autoconfig
+      # config:
+      #   autoFill: true     # false 则只加载不写
+      #   piAiDataDir: ''    # 找不到 pi-ai 目录时再填
