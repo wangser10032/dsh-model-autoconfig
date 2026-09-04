@@ -513,6 +513,17 @@ export const VENDORS = [
         note: 'pi-ai xiaomi.json：mimo-v2.5 含视觉；pro 纯文本' },
     ],
   },
+  {
+    id: 'opencode', catalogProviders: ['opencode', 'opencode-go'], label: 'OpenCode',
+    match: [/opencode\.ai/i], api: 'openai-responses',
+    thinkingFormat: 'openai',
+    source: 'pi-ai opencode-go.json muse-spark-1.2-contributor',
+    models: [
+      { match: /^muse-spark-1\.2-contributor/i, contextWindow: 1048576, maxTokens: 131072, input: ['text', 'image'],
+        efforts: { off: null, minimal: 'minimal', low: 'low', medium: 'medium', high: 'high', xhigh: 'xhigh' },
+        note: 'pi-ai opencode-go.json thinkingLevelMap：off:null + minimal/low/medium/high/xhigh' },
+    ],
+  },
 ];
 
 /** 按 baseURL 猜厂商。 */
