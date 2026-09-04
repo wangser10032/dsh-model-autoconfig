@@ -170,7 +170,6 @@ dsh-mac add --at llm.providers --id cpa --url ... --models ...
 ```bash
 # dsh plugin 依赖 pnpm（Windows 上可用：npm install -g pnpm）
 dsh plugin --profile web add dsh-model-autoconfig
-# 尚未发布到 npm 时：dsh plugin --profile web add <本仓库路径>
 ```
 
 维护者（真值库 / 单测 / CLI）：
@@ -258,7 +257,7 @@ cpa openai-completions https://api.deepseek.com
 
 ## 真值库覆盖
 
-12 家厂商 / 34 条模型规则，每条都带官方文档出处：
+12 家厂商 / 35 条模型规则，每条都带官方文档出处：
 
 | 厂商 | 关键陷阱 |
 |---|---|

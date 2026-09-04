@@ -2,6 +2,18 @@
   "name": "dsh-model-autoconfig",
   "version": "0.8.1",
   "description": "dsh web 插件：监视 Settings → Models，按真值库自动配置思考档位和视觉等能力",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek",
+    "deepseek-harness",
+    "llm-pi-ai",
+    "reasoning-effort",
+    "thinking-level",
+    "model-config",
+    "vision"
+  ],
+  "author": "wangser10032",
   "type": "module",
   "bin": {
     "dsh-mac": "./bin/dsh-mac.mjs"
@@ -34,6 +46,29 @@
   },
   "scripts": {
     "test": "node --test test/*.test.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wangser10032/dsh-model-autoconfig-.git"
+  },
+  "bugs": {
+    "url": "https://github.com/wangser10032/dsh-model-autoconfig-/issues"
+  },
+  "homepage": "https://github.com/wangser10032/dsh-model-autoconfig-#readme",
+  "publishConfig": {
+    "access": "public"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/schemastery": "*",
+    "@deepseek-ai/dsh-credentials": "*"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/schemastery": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-credentials": {
+      "optional": true
+    }
   },
   "license": "MIT"
 }
