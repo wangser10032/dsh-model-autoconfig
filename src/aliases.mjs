@@ -37,4 +37,13 @@ export const MODEL_ALIASES = {
   'seed-2-1-turbo': 'doubao-seed-2-1-turbo-260628',
   'seed-2.0-code': 'doubao-seed-2-0-code-preview-260215',
   'seed-2.0-lite': 'doubao-seed-2-0-lite-260428',
+
+  // ── 火山方舟：软规则剥完仍对不上规范名的真实 id ────────────────
+  'ark-code-latest': 'doubao-seed-2-0-code-preview-260215',
+
+  // ── pi-ai kimi-coding 目录短 id ──────────────────────────────
+  'k3': 'kimi-k3',
+  'k3-256k': 'kimi-k3',
+  'kimi-for-coding': 'kimi-k2.7-code',
+  'kimi-for-coding-highspeed': 'kimi-k2.7-code',
 };

@@ -68,6 +68,11 @@ const SOFT_TRANSFORMS = [
     const i = id.indexOf(':');
     return i > 0 ? [id.slice(0, i)] : null;
   }],
+  // Bedrock / 部分网关写成 anthropic.claude-…（点号厂商前缀，不是 /）。
+  ['去点号厂商前缀', (id) => {
+    const m = id.match(/^(anthropic|amazon|meta|mistral|cohere|ai21|stability)\.(.+)$/i);
+    return m ? [m[2]] : null;
+  }],
   ['去日期后缀', (id) => {
     for (const re of DATE_SUFFIXES) {
       const stripped = id.replace(re, '');
@@ -87,8 +92,12 @@ const SOFT_TRANSFORMS = [
   //   _ / 空格 → -，数字间的 - → .（gpt-5-6-sol → gpt-5.6-sol）
   // (\d)-(\d) 不会误伤 deepseek-v4-pro（4 后面是字母 p）。
   ['分隔符归一', (id) => {
-    const norm = id.replace(/[_\s]+/g, '-').replace(/(\d)-(\d)/g, '$1.$2');
-    return norm !== id ? [norm] : null;
+    const dashToDot = id.replace(/[_\s]+/g, '-').replace(/(\d)-(\d)/g, '$1.$2');
+    const dotToDash = id.replace(/[_\s]+/g, '-').replace(/(\d)\.(\d)/g, '$1-$2');
+    const out = [];
+    if (dashToDot !== id) out.push(dashToDot);
+    if (dotToDash !== id && dotToDash !== dashToDot) out.push(dotToDash);
+    return out.length ? out : null;
   }],
   // 通用截断：从右往左剥 -/_，全部词干按长到短作为候选。
   ['去尾段', (id) => {

@@ -81,6 +81,11 @@ test('软匹配：把思考档焊进 id 的变体（-high）', () => {
   assert.equal(hit.via, '去档位后缀');
 });
 
+test('软匹配：分隔符归一 —— 数字点换横杠（doubao-seed-2.0-pro）', () => {
+  const hit = findAnyVendor('doubao-seed-2.0-pro');
+  assert.equal(hit?.vendor.id, 'doubao');
+});
+
 test('软匹配：分隔符归一 —— 数字横杠换点（kimi-k2-5 → kimi-k2.5）', () => {
   // 选 kimi 做样例是有意的：其规则带点号（k2.[56]），横杠形式原样命中不了，
   // 才能真正测到这条路径。gpt-5-6-sol / glm-5_3 这类会被更宽的
@@ -156,7 +161,9 @@ test('平台专属规则不参与全局匹配：Qwen/ 前缀不再配上 Groq �
   // ModelScope / 硅基流动 / 百炼的 org/model 形式（Qwen/Qwen3-235B-A22B）
   // 曾原样命中 groq 的 /^qwen\//i 规则，被配上 Groq 专属 wire 拼写
   // （off:'none' / high:'default'）—— 发给这些平台就是错的。
-  assert.equal(findAnyVendor('Qwen/Qwen3-235B-A22B'), null);
+  const q = findAnyVendor('Qwen/Qwen3-235B-A22B');
+  assert.equal(q?.vendor.id, 'qwen');
+  assert.notEqual(q.spec.efforts.high, 'default');
   // 带 -vl 的仍走 qwen 视觉规则（去前缀路径），不受 platformOnly 影响
   assert.equal(findAnyVendor('Qwen/Qwen3-VL-8B-Instruct')?.vendor.id, 'qwen');
 });
@@ -236,7 +243,9 @@ test('平台上下文优先，且不会放宽全局 platformOnly 防线', () => 
   const groq = findVendorModel('qwen/qwen3-32b', 'groq');
   assert.equal(groq.vendor.id, 'groq');
   assert.equal(groq.spec.efforts.high, 'default');
-  assert.equal(findAnyVendor('qwen/qwen3-32b'), null);
+  const globalQwen = findAnyVendor('qwen/qwen3-32b');
+  assert.equal(globalQwen.vendor.id, 'qwen');
+  assert.notEqual(globalQwen.spec.efforts.high, 'default');
 });
 
 test('Codex 与数字分隔符变体不会被宽规则提前吞掉', () => {

@@ -142,6 +142,7 @@ function specWantsAdaptive(spec, vendor, modelId) {
   if (spec?.forceAdaptiveThinking === true) return true;
   if (vendor?.id !== 'anthropic') return false;
   const id = String(modelId ?? '');
+  if (/claude-sonnet-4[.-]5/i.test(id)) return false;
   return /claude-(opus|sonnet|fable|mythos)-5/i.test(id)
     || /claude-(opus|sonnet)-4[.-][678]/i.test(id)
     || /claude-(fable|mythos)/i.test(id);
