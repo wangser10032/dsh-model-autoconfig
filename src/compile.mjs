@@ -5,9 +5,9 @@
  * 三条硬约束来自 @deepseek-ai/dsh-llm-pi-ai 的类型定义，违反会被
  * assertServiceable 以 settings-rejected 拒绝，而不是被忽略：
  *
- *  1. compat 只有 thinkingFormat / supportsReasoningEffort 两个字段，
- *     且 pi-ai 只在 OpenAICompletionsCompat 上定义它们 —— 所以模型级 compat
- *     只能出现在 api === 'openai-completions' 的 route 上。
+ *  1. 模型级 compat 按协议门控（宿主 COMPAT_GATES）：openai-completions 17 字段、
+ *     openai-responses 3 字段、anthropic-messages 7 字段（含 forceAdaptiveThinking）。
+ *     协议不接受的字段会被 resolveModelCompat 整段拒绝。
  *  2. reasoningEfforts 里只有 off 允许空值；其余每个声明的档位都必须给 wire 拼写。
  *  3. modelOverrides 只在「内置目录 route + 没有 models 列表」时有效，
  *     且不能命名目录里不存在的模型。
@@ -19,6 +19,7 @@
  */
 import { LEVELS } from './levels.mjs';
 import { hasVision, unionInput } from './modalities.mjs';
+import { COMPAT_GATES } from './host.mjs';
 import { modelSpec } from './vendors.mjs';
 
 export class CompileError extends Error {}
@@ -105,15 +106,27 @@ export function compileModel({ vendor, modelId, api, spec, includeIO = true, ove
   if (dropped.notExposed.length)
     notes.push(`端点未暴露档位 ${dropped.notExposed.join('/')}，已按覆盖层裁掉`);
 
-  // ── compat：只在 openai-completions 上合法 ────────────────────
+  // ── compat：按协议门控，只写该 api 接受的字段 ────────────────
+  const offered = new Set(COMPAT_GATES[api] ?? []);
   const tf = overlay?.thinkingFormat ?? vendor?.thinkingFormat;
-  if (api === 'openai-completions') {
-    const compat = {};
-    if (tf) compat.thinkingFormat = tf;
-    if (entry.reasoningEfforts === false) compat.supportsReasoningEffort = false;
-    if (Object.keys(compat).length) entry.compat = compat;
-  } else if (tf) {
-    notes.push(`api=${api} 不接受模型级 compat（pi-ai 只在 OpenAICompletionsCompat 上定义），已跳过 thinkingFormat=${tf}`);
+  const adaptive = overlay?.forceAdaptiveThinking ?? specWantsAdaptive(s, vendor, modelId);
+  const wanted = {
+    ...(tf ? { thinkingFormat: tf } : {}),
+    ...(entry.reasoningEfforts === false ? { supportsReasoningEffort: false } : {}),
+    ...(adaptive ? { forceAdaptiveThinking: true } : {}),
+    ...(overlay?.compat ?? {}),
+    ...(s.compat ?? {}),
+  };
+  const compat = {};
+  const skipped = [];
+  for (const [k, v] of Object.entries(wanted)) {
+    if (v == null) continue;
+    if (!offered.has(k)) { skipped.push(k); continue; }
+    compat[k] = v;
+  }
+  if (Object.keys(compat).length) entry.compat = compat;
+  else if (skipped.length && (tf || adaptive)) {
+    notes.push(`api=${api} 不接受 ${skipped.join('/')}（宿主 COMPAT_GATES），已跳过`);
   }
 
   if (s.forcedThinking) notes.push(`无 off 档（该模型不能关闭思考）：${s.forcedThinking}`);
@@ -122,6 +135,16 @@ export function compileModel({ vendor, modelId, api, spec, includeIO = true, ove
   if (vendor?.warn) notes.push(vendor.warn);
 
   return { entry, notes, dropped };
+}
+
+/** Claude 4.6+ / 5 / fable / mythos 走 adaptive thinking（pi-ai 只在 forceAdaptiveThinking===true 时发 output_config.effort）。 */
+function specWantsAdaptive(spec, vendor, modelId) {
+  if (spec?.forceAdaptiveThinking === true) return true;
+  if (vendor?.id !== 'anthropic') return false;
+  const id = String(modelId ?? '');
+  return /claude-(opus|sonnet|fable|mythos)-5/i.test(id)
+    || /claude-(opus|sonnet)-4[.-][678]/i.test(id)
+    || /claude-(fable|mythos)/i.test(id);
 }
 
 /** 只补 off 档，其余原样保留 —— 用于修内置目录缺 off 的模型。 */

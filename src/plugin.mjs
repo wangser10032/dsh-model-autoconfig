@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { findCatalogDir, loadCatalog } from './catalog.mjs';
 import { listModels, pingModels } from './discover.mjs';
 import { DEFAULT_ROUTE_EFFORT } from './levels.mjs';
+import { capsFromDescriptor, trimProviders } from './host.mjs';
 import * as S from './settings.mjs';
 import {
   TAG, NS, classifyRoute, decideBaseURL, normalizeEndpoint, planSync,
@@ -74,6 +75,9 @@ function dshApi(ctx) {
       if (hit) return hit.value ?? null;
       if (typeof ctx.settings?.get === 'function') return ctx.settings.get(ns);
       return null;
+    },
+    async describe(ns) {
+      return descriptor(ns);
     },
     async writeProviders(ns, allProviders, changed) {
       if (typeof ctx.settings?.replace === 'function' && typeof ctx.settings?.describe === 'function') {
@@ -215,6 +219,7 @@ export async function syncOnce(ctx, config, reason, api = dshApi(ctx), runtime =
   const section = await api.read(ns);
   if (stopped(runtime)) return { changed: false, aborted: true };
   const providers = section?.providers;
+  const caps = capsFromDescriptor(typeof api.describe === 'function' ? await api.describe(ns) : null);
   if (!providers || typeof providers !== 'object' || Array.isArray(providers)) {
     if (reason === 'ready') log('info', '还没有自定义模型配置。在 Settings → Models 保存 URL 和密钥后会自动配档位');
     return { changed: false };
@@ -247,9 +252,10 @@ export async function syncOnce(ctx, config, reason, api = dshApi(ctx), runtime =
     defaultEffort: DEFAULT_ROUTE_EFFORT,
   });
 
+  const trimmed = trimProviders(planned.providers, caps);
   const written = {};
   for (const route of Object.keys(providers)) {
-    if (!jsonEqSafe(planned.providers[route], providers[route])) written[route] = planned.providers[route];
+    if (!jsonEqSafe(trimmed[route], providers[route])) written[route] = trimmed[route];
   }
   const willWrite = Object.keys(written).length > 0;
 
@@ -265,11 +271,11 @@ export async function syncOnce(ctx, config, reason, api = dshApi(ctx), runtime =
   }
 
   if (stopped(runtime)) return { changed: false, aborted: true };
-  await api.writeProviders(ns, planned.providers, written);
+  await api.writeProviders(ns, trimmed, written);
   if (stopped(runtime)) return { changed: true, aborted: true };
   S.saveState(planned.state);
   log('info', `已写入 ${Object.keys(written).join(', ')}（${reason}）`);
-  return { changed: true, routes: Object.keys(written), snapshot: planned.providers };
+  return { changed: true, routes: Object.keys(written), snapshot: trimmed };
 }
 
 function jsonEqSafe(a, b) {

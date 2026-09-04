@@ -7,6 +7,7 @@
  */
 import { LEVEL_LABEL, DEFAULT_ROUTE_EFFORT, clampThinkingLevel, pickRouteEffort } from './levels.mjs';
 import { coversInput, hasVision, inferInput, unionInput } from './modalities.mjs';
+import { applyPlatform, platformForUrl } from './platforms.mjs';
 import {
   findVendorModel, vendorForUrl, vendorForCatalogRoute, catalogRouteNames,
 } from './vendors.mjs';
@@ -70,13 +71,14 @@ export function decideBaseURL(current, rootStatus, v1Status) {
   return { baseURL: root, changed: root !== orig };
 }
 
-function compileKnown(modelId, api, overlay, includeIO, preferredVendor = null) {
+function compileKnown(modelId, api, overlay, includeIO, preferredVendor = null, baseURL = '') {
   const hit = findVendorModel(modelId, preferredVendor);
   if (!hit) return null;
   try {
-    const r = compileModel({
+    let r = compileModel({
       vendor: hit.vendor, modelId, api, spec: hit.spec, overlay, includeIO,
     });
+    r = applyPlatform(r, platformForUrl(baseURL), { baseURL, modelId });
     // 非原样命中（硬映射/软匹配/去前缀）时把解析路径暴露给规划器写日志。
     // entry.id 仍是网关原始 id —— 真值只决定档位表长什么样。
     if (hit.id !== modelId) r.resolved = { id: hit.id, via: hit.via };
@@ -104,7 +106,13 @@ function mergeEntry(existing, compiled) {
       continue;
     }
     if (k === 'compat') {
-      out[k] = { ...(out[k] ?? {}), ...v };
+      // 用户手改的 compat 键优先：平台/真值只填空缺，不覆盖已有开关。
+      out[k] = { ...v, ...(out[k] ?? {}) };
+      continue;
+    }
+    if (k === 'maxTokens') {
+      // 平台硬上限（方舟 coding 400）必须夹紧，即使用户/真值写了更大的值。
+      if (out[k] == null || (typeof v === 'number' && v < out[k])) out[k] = v;
       continue;
     }
     if (out[k] === undefined) out[k] = v;
@@ -231,7 +239,7 @@ export function planGatewayRoute(route, profile, gw, stateSlice, defaultEffort =
     if (!m?.id || seen.has(m.id)) continue;
     seen.add(m.id);
     const overlay = overlayFromDeclared(gw?.declared?.[m.id]);
-    const compiled = compileKnown(m.id, api, overlay, includeIO, preferredVendor);
+    const compiled = compileKnown(m.id, api, overlay, includeIO, preferredVendor, next.baseURL ?? '');
     if (compiled) {
       const merged = mergeEntry(m, compiled);
       nextModels.push(merged);
@@ -254,7 +262,7 @@ export function planGatewayRoute(route, profile, gw, stateSlice, defaultEffort =
     for (const id of gw.ids ?? []) {
       if (!id || seen.has(id) || deleted.has(id)) continue;
       const overlay = overlayFromDeclared(gw.declared?.[id]);
-      const compiled = compileKnown(id, api, overlay, includeIO, preferredVendor);
+      const compiled = compileKnown(id, api, overlay, includeIO, preferredVendor, next.baseURL ?? '');
       if (!compiled) continue;
       const entry = mergeEntry(null, compiled);
       nextModels.push(entry);

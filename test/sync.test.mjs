@@ -554,6 +554,17 @@ test('端点未声明推理支持时不做否定推断', () => {
     'supportsReasoning 为 null 是「没报」，不是「不支持」');
 });
 
+test('火山方舟 URL 走平台 compat；用户手改的 compat 不覆盖', () => {
+  const r = planGatewayRoute('ark', {
+    baseURL: 'https://ark.cn-beijing.volces.com/api/coding/v3',
+    models: [{ id: 'deepseek-v4-pro', maxTokens: 393216, compat: { supportsDeveloperRole: true } }],
+  }, { fetchOk: false, ids: [] }, {});
+  const m = r.profile.models[0];
+  assert.equal(m.maxTokens, 128000, 'coding 端点夹紧');
+  assert.equal(m.compat.supportsDeveloperRole, true, '用户手改优先于平台 false');
+  assert.equal(m.compat.requiresReasoningContentOnAssistantMessages, true);
+});
+
 test('catalog 只清理 state 证明由插件管理的失效 override', () => {
   const r = planCatalogRoute('deepseek', {
     modelOverrides: {

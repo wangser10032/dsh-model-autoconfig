@@ -43,18 +43,23 @@ test('OpenAI 代际差异：gpt-5 有 minimal 无 off，gpt-5.6 反之', () => {
   assert.ok('off' in b && b.off === 'none' && !('minimal' in b));
 });
 
-test('非 openai-completions 协议不写模型级 compat（Z.ai 的 /api/anthropic 端点）', () => {
+test('非 openai-completions 协议不写 thinkingFormat（Z.ai 的 /api/anthropic 端点）', () => {
   const v = vendorById('zai');           // 有 thinkingFormat: 'zai'
   const { entry, notes } = compileModel({ vendor: v, modelId: 'glm-5.2', api: 'anthropic-messages' });
-  assert.equal(entry.compat, undefined);
-  assert.ok(notes.some((n) => n.includes('不接受模型级 compat')));
+  assert.equal(entry.compat?.thinkingFormat, undefined);
+  assert.ok(notes.some((n) => n.includes('thinkingFormat') || n.includes('不接受')));
 });
 
-test('Anthropic 官方本就无 thinkingFormat，不产生多余提示', () => {
+test('Claude 5 / 4.6+ 在 anthropic-messages 上写 forceAdaptiveThinking', () => {
   const { entry, notes } = compileModel({
     vendor: vendorById('anthropic'), modelId: 'claude-opus-5', api: 'anthropic-messages' });
-  assert.equal(entry.compat, undefined);
-  assert.ok(!notes.some((n) => n.includes('不接受模型级 compat')));
+  assert.equal(entry.compat.forceAdaptiveThinking, true);
+  assert.equal(entry.compat.thinkingFormat, undefined);
+  assert.ok(!notes.some((n) => n.includes('不接受')));
+  const opus45 = compileModel({
+    vendor: vendorById('anthropic'), modelId: 'claude-opus-4.5', api: 'anthropic-messages',
+  }).entry;
+  assert.equal(opus45.compat?.forceAdaptiveThinking, undefined);
 });
 
 test('端点裁剪覆盖官方规格并留下说明', () => {
