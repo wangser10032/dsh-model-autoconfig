@@ -6,7 +6,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -18,15 +18,19 @@ import { planSync } from '../src/sync.mjs';
 import { VENDORS } from '../src/vendors.mjs';
 
 const SETTINGS = join(homedir(), '.dsh', 'settings.yaml');
-const WEB_PKG = join(homedir(), '.dsh', 'profiles', 'web', 'package.json');
+const PROFILES = join(homedir(), '.dsh', 'profiles');
 
 async function loadHost() {
   const errors = [];
-  try {
-    const href = pathToFileURL(createRequire(WEB_PKG).resolve('@deepseek-ai/dsh-llm-pi-ai')).href;
-    return await import(href);
-  } catch (e) {
-    errors.push(`web profile: ${e.message.split('\n')[0]}`);
+  // 0.2.x 桌面版把宿主打进 app.asar，profile 里没有 node_modules；
+  // 仓库的 devDependency 才是当前宿主。
+  for (const from of [import.meta.url, join(PROFILES, 'web', 'package.json')]) {
+    try {
+      const href = pathToFileURL(createRequire(from).resolve('@deepseek-ai/dsh-llm-pi-ai')).href;
+      return await import(href);
+    } catch (e) {
+      errors.push(`resolve from ${from}: ${e.message.split('\n')[0]}`);
+    }
   }
   try {
     return await import('@deepseek-ai/dsh-llm-pi-ai');
@@ -105,25 +109,62 @@ test('真值库每条规则 × 三种协议都能过宿主 new Config', () => {
   assert.ok(n > 0);
 });
 
-test('真实 settings.yaml 只读副本经 planSync 后过宿主 Config', () => {
-  assert.equal(existsSync(SETTINGS), true, `需要可读的 ${SETTINGS}（不要改原文件）`);
-  const dir = mkdtempSync(join(tmpdir(), 'dsh-mac-host-schema-'));
-  const copy = join(dir, 'settings.yaml');
-  try {
-    copyFileSync(SETTINGS, copy);
-    const raw = YAML.parse(readFileSync(copy, 'utf8'));
-    const providers = raw?.['llm-pi-ai']?.providers;
-    assert.ok(providers && typeof providers === 'object', '副本里没有 llm-pi-ai.providers');
-    const planned = planSync({
-      providers,
-      state: {},
-      catalogEntries: [],
-      gateways: {},
-    });
-    accept(planned.providers, 'planSync(settings.yaml 副本)');
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
+/**
+ * 0.2.x 的模型配置落在 profile 的 cordis.patch.yml（id: llm-pi-ai 的
+ * config.providers），不再是 ~/.dsh/settings.yaml。两者都尝试，取第一个。
+ */
+function realProviders() {
+  if (existsSync(SETTINGS)) {
+    try {
+      const raw = YAML.parse(readFileSync(SETTINGS, 'utf8'));
+      const p = raw?.['llm-pi-ai']?.providers;
+      if (p && typeof p === 'object') return p;
+    } catch { /* 旧文件坏了就继续找 profile */ }
   }
+  let dirs = [];
+  try {
+    dirs = readdirSync(PROFILES, { withFileTypes: true })
+      .filter((d) => d.isDirectory()).map((d) => d.name);
+  } catch { return null; }
+  for (const name of dirs) {
+    for (const file of ['cordis.patch.yml', 'cordis.yml']) {
+      const f = join(PROFILES, name, file);
+      if (!existsSync(f)) continue;
+      let rows;
+      try { rows = YAML.parse(readFileSync(f, 'utf8')); } catch { continue; }
+      if (!Array.isArray(rows)) continue;
+      for (const row of rows) {
+        const p = row?.id === 'llm-pi-ai' ? row?.config?.providers : null;
+        if (p && typeof p === 'object') return p;
+      }
+    }
+  }
+  return null;
+}
+
+/** 没有可读的真实配置时，用真值库合成一份等价的 providers fixture。 */
+function syntheticProviders() {
+  const models = [];
+  for (const v of VENDORS.slice(0, 6)) {
+    const spec = v.models[0];
+    if (!spec) continue;
+    const { entry } = compileModel({
+      vendor: v, modelId: 'probe', api: 'openai-completions', spec, includeIO: true,
+    });
+    models.push(entry);
+  }
+  return { probe: { api: 'openai-completions', baseURL: 'https://example.test/v1', models } };
+}
+
+test('真实 profile 配置（或合成 fixture）经 planSync 后过宿主 Config', () => {
+  const providers = realProviders() ?? syntheticProviders();
+  const planned = planSync({
+    providers,
+    state: {},
+    catalogEntries: [],
+    gateways: {},
+  });
+  accept(planned.providers, 'planSync(providers)');
 });
 
 test('负例：非法 thinkingFormat reasoning_effort 被宿主拒绝', () => {

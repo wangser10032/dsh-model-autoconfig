@@ -1,13 +1,19 @@
 /**
  * 宿主能力自适配：从 settings.describe().schema（{uid,refs}）抽枚举/字段集，
- * 写入前裁剪，适配 dsh 0.0.1-rc.1 ~ 0.1.2。
+ * 写入前裁剪，适配 dsh 0.0.1-rc.1 ~ 0.2.1-rc.2。
  *
- * 拿不到 descriptor.schema 时退回 0.1.2 全集（与 levels.THINKING_FORMATS /
+ * 拿不到 descriptor.schema 时退回 0.2.1-rc.2 全集（与 levels.THINKING_FORMATS /
  * HOST_APIS 及本文件 COMPAT_GATES 一致）。
  */
 import { HOST_APIS, THINKING_FORMATS } from './levels.mjs';
 
-/** 与宿主 0.1.2 lib/index.js COMPAT_GATES 的 offer 字段一致。 */
+/**
+ * 与宿主 0.2.1-rc.2 lib/index.js COMPAT_GATES 的 offer 字段一致。
+ *
+ * 注意：0.2.x 的 schema 仍接受 withhold 字段，但 assertOfferedCompatFields
+ * 会在写入时拒绝它们（"not configurable here"）。这里只列 offer。
+ * 0.1.x 的字段更少；老宿主会通过 describe().schema 把多出来的字段裁掉。
+ */
 export const COMPAT_GATES = {
   'openai-completions': [
     'supportsStore', 'supportsDeveloperRole', 'supportsReasoningEffort',
@@ -15,11 +21,12 @@ export const COMPAT_GATES = {
     'requiresToolResultName', 'requiresAssistantAfterToolResult',
     'requiresThinkingAsText', 'requiresReasoningContentOnAssistantMessages',
     'thinkingFormat', 'chatTemplateKwargs', 'chatTemplateArgs',
-    'supportsThinkingTokenBudget', 'supportsStrictMode', 'cacheControlFormat',
-    'supportsLongCacheRetention',
+    'supportsThinkingTokenBudget', 'thinkingTokenBudgetField', 'vllmPriority',
+    'supportsStrictMode', 'cacheControlFormat', 'supportsLongCacheRetention',
   ],
   'openai-responses': [
-    'supportsDeveloperRole', 'supportsStrictMode', 'supportsLongCacheRetention',
+    'supportsDeveloperRole', 'supportsMaxOutputTokens', 'supportsStrictMode',
+    'supportsLongCacheRetention',
   ],
   'anthropic-messages': [
     'supportsEagerToolInputStreaming', 'supportsLongCacheRetention',

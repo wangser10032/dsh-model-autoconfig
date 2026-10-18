@@ -6,10 +6,10 @@
 
 | 路径 | 职责 |
 |---|---|
-| `src/dsh/plugin.mjs` | Cordis 插件：监视 `llm-pi-ai`，describe/replace/mutate 写入 |
+| `src/dsh/plugin.mjs` | Cordis 插件：监视 `llm-pi-ai`，describe/replace/mutate 写入；监听 `settings/document-updated`（0.2.x）与 `settings/updated`（0.1.x） |
 | `src/dsh/sync.mjs` | 规划器：catalog vs gateway、合并、平台叠层、用户 compat 优先 |
 | `src/dsh/host.mjs` | 从 `describe().schema` 抽枚举，写入前 `trimProviders` |
-| `src/dsh/catalog.mjs` | 定位并加载 pi-ai `dist/providers/data`，跳过 `.manifest.json` |
+| `src/dsh/catalog.mjs` | 定位并加载 pi-ai `dist/providers/data`（含 Electron `app.asar`），跳过 `.manifest.json`，0.2.x 的 `chat:` 前缀取 `m.id` |
 | `src/dsh/discover.mjs` | GET `/models`、协议探测（Google 域名写 openai-completions） |
 | `src/dsh/settings.mjs` | CLI 用 settings.yaml 定位/读写/备份 |
 | `src/dsh/levels.mjs` | 档位全集、`THINKING_FORMATS`、`HOST_APIS` |
@@ -25,15 +25,16 @@
 | `lib/client.js` | 浏览器插件：localStorage JSON 按 provider+model 记忆最后成功档位，失效档位回退默认 |
 | `bin/dsh-mac.mjs` | 维护者 CLI |
 | `test/host-schema.test.mjs` | 编译产物必须过真实宿主 `new Config`（禁止 skip） |
-| `test/coverage.test.mjs` | pi-ai 目录覆盖率：核心 100%、全目录 ≥80% |
+| `test/coverage.test.mjs` | pi-ai 目录覆盖率：核心 100%、全目录 ≥75%（1.3 目录含大量非目标厂商） |
 
-## 宿主契约（dsh 0.1.2，以 `Config.toJSON()` / lib/index.js 为准）
+## 宿主契约（dsh 0.2.1-rc.2，以 `Config.toJSON()` / lib/index.js 为准）
 
 - 手写路由 `api` ∈ `openai-completions` \| `openai-responses` \| `anthropic-messages`
 - `thinkingFormat` 11 值：openai / deepseek / openrouter / together / baseten / zai / qwen / chat-template / qwen-chat-template / string-thinking / ant-ling。**没有 `reasoning_effort`**
 - `input` ∈ text \| image；档位键 ∈ off \| minimal \| low \| medium \| high \| xhigh \| max
-- 模型级 compat 按协议门控（`COMPAT_GATES`）：openai-completions 17 字段、openai-responses 3、anthropic-messages 7（含 `forceAdaptiveThinking`）。写错字段会被 `resolveModelCompat` 整段拒绝
-- 拿不到 `describe().schema` 时按 0.1.2 全集裁剪
+- 模型级 compat 按协议门控（`COMPAT_GATES`）：openai-completions 19 字段、openai-responses 4、anthropic-messages 7（含 `forceAdaptiveThinking`）。写错字段会被 `resolveModelCompat` / `assertOfferedCompatFields` 整段拒绝
+- 0.2.x 的 pi-ai 目录键带类别前缀（`chat:<id>` / `classifier:<id>`），真实 id 在 `m.id`
+- 拿不到 `describe().schema` 时按 0.2.1-rc.2 全集裁剪
 
 ## 数据流
 
@@ -44,7 +45,7 @@ settings.describe(llm-pi-ai)
   → compileModel                           # 真值 → 条目 + 协议门控 compat
   → applyPlatform(baseURL)                 # 火山/硅基/百炼覆盖；用户 compat 不覆盖
   → trimProviders(capsFromDescriptor)      # 按宿主 schema 裁剪
-  → settings.replace / mutate(expectedRevision)
+  → settings.replace / mutate(expectedRevision)   # 0.2.x 写 profile patch
 ```
 
 自定义网关写 `models[]`；官方目录 route 只写 `modelOverrides`。两者并存会被宿主拒绝。

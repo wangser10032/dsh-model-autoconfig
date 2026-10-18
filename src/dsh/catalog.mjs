@@ -39,12 +39,30 @@ function fastRoots() {
     dsh,
     join(dsh, 'profiles'),
     join(dsh, 'profiles', 'web'),
+    ...electronRoots(),
     process.env.APPDATA && join(process.env.APPDATA, 'npm'),
     join(h, 'AppData', 'Roaming', 'npm'),
     '/usr/lib/node_modules',
     '/usr/local/lib/node_modules',
     join(h, '.npm-global', 'lib', 'node_modules'),
   ].filter(Boolean);
+}
+
+/**
+ * 0.2.x 桌面版把 dsh 运行时和 pi-ai 一起打进 app.asar。
+ * 插件跑在 Electron 主进程里，Electron 给 fs 打了 asar 补丁，
+ * 所以这些路径可以像普通目录一样 readdir/readFile（纯 Node 下会自然跳过）。
+ */
+function electronRoots() {
+  const roots = [];
+  const resources = process.resourcesPath;
+  if (typeof resources === 'string' && resources) {
+    roots.push(join(resources, 'app.asar', 'dsh'));
+    roots.push(join(resources, 'app.asar.unpacked', 'dsh'));
+  }
+  const exeDir = process.execPath ? dirname(process.execPath) : '';
+  if (exeDir) roots.push(join(exeDir, 'resources', 'app.asar', 'dsh'));
+  return roots;
 }
 
 function candidates(extra) {
@@ -124,6 +142,8 @@ function resolveInstalledDir() {
       join(dsh, 'package.json'),
     );
   }
+  // Electron 桌面版：从 app.asar 里的 dsh 运行时解析 pi-ai。
+  for (const root of electronRoots()) parents.push(join(root, 'package.json'));
   parents.push(join(process.cwd(), 'package.json'));
   for (const parent of parents) {
     const dir = requirePiAiDir(parent);
@@ -155,6 +175,11 @@ export function findCatalogDir(extra) {
 }
 
 /** 载入全部内置目录，返回扁平模型数组。
+ *
+ *  0.2.x（pi-ai 1.3+）把目录键改成带类别前缀的 `chat:<id>` /
+ *  `classifier:<id>`，真实模型 id 在 `m.id`。插件只关心可对话的 chat 条目：
+ *  旧版目录键就是裸 id，没有前缀。
+ *
  *  结果按目录路径缓存 45s（进程内）：插件每个事件都会跑一轮同步，
  *  每轮都 readdir + readFileSync + JSON.parse 会阻塞 dsh web 进程的事件循环。
  *  ttlMs=0 跳过缓存（CLI 一次性进程与测试用）。 */
@@ -174,8 +199,11 @@ export function loadCatalog(dir, ttlMs = CATALOG_TTL_MS) {
     try { data = JSON.parse(readFileSync(join(dir, f), 'utf8')); } catch { continue; }
     for (const [api, models] of Object.entries(data)) {
       if (!models || typeof models !== 'object') continue;
-      for (const [id, m] of Object.entries(models)) {
+      for (const [key, m] of Object.entries(models)) {
         if (!m || typeof m !== 'object') continue;
+        const kind = /^([a-z-]+):/.exec(key)?.[1];
+        if (kind && kind !== 'chat') continue; // 分类器 / embedding 不是可对话模型
+        const id = typeof m.id === 'string' && m.id ? m.id : key.replace(/^[a-z-]+:/, '');
         out.push({ provider, api, id, model: m });
       }
     }

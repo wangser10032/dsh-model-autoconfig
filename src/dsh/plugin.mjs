@@ -1,7 +1,10 @@
 /**
  * dsh web 插件：监视 llm-pi-ai，把思考档位和视觉能力写进 Settings → Models。
  * 不注册自己的设置页。随 dsh 漂移的调用只放在 dshApi() / resolveKey()。
- * 0.1.2：settings.describe/replace 仍是主路径；mutate 补 expectedRevision。
+ *
+ * 0.1.x：settings.describe/replace 是主路径，事件名 settings/updated。
+ * 0.2.x：同一套 settings 服务，事件名改为 settings/document-updated
+ *        （payload 只有 revision，不再带 next）。两个事件都监听。
  */
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
@@ -349,6 +352,12 @@ export function apply(ctx, config = {}) {
   };
 
   ctx.on?.('ready', () => run('ready', true));
+  const onSettingsUpdated = (ns) => {
+    if (nsName(ns) !== NS) return;
+    run('settings/updated');
+  };
+  // 0.2.x 事件：settings/document-updated(ns, revision)。0.1.x 仍发 settings/updated(ns, next)。
+  ctx.on?.('settings/document-updated', onSettingsUpdated);
   ctx.on?.('settings/updated', (ns, next) => {
     if (nsName(ns) !== NS) return;
     if (lastWritten && next?.providers && JSON.stringify(next.providers) === lastWritten) return;

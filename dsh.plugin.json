@@ -1,6 +1,6 @@
 {
   "id": "model-autoconfig",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "main": "src/plugin.mjs",
   "profile": "web",
   "description": "自动补全模型思考档位和能力，并按模型记住最后选择的思考档位"

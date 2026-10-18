@@ -14,10 +14,11 @@ export const LEVEL_LABEL = {
 };
 
 /**
- * dsh 0.1.2 llm-pi-ai Config 允许的 compat.thinkingFormat 取值。
- * 与宿主 lib/index.js SUPPORTED_THINKING_FORMATS 逐字一致。
- * 没有 reasoning_effort —— 那是 pi-ai 的 wire 字段名，写进 settings 会被
- * schemastery 整段拒绝。xAI / Groq 的顶层 reasoning_effort 走 'openai'。
+ * dsh llm-pi-ai Config 允许的 compat.thinkingFormat 取值。
+ * 与宿主 0.2.1-rc.2 lib/index.js SUPPORTED_THINKING_FORMATS 逐字一致
+ * （0.1.x 起未变）。没有 reasoning_effort —— 那是 pi-ai 的 wire 字段名，
+ * 写进 settings 会被 schemastery 整段拒绝。xAI / Groq 的顶层
+ * reasoning_effort 走 'openai'。
  */
 export const THINKING_FORMATS = [
   'openai', 'deepseek', 'openrouter', 'together', 'baseten', 'zai', 'qwen',
@@ -33,8 +34,9 @@ export const KNOWN_APIS = [
 ];
 
 /**
- * 宿主 dsh 0.1.2 手写路由允许的协议 = supportedProtocols()。
- * google-generative-ai 等只存在于 pi-ai 内置目录，自定义 URL 写进去会被拒。
+ * 宿主 dsh 手写路由允许的协议 = supportedProtocols()。
+ * 0.2.1-rc.2 起仍是这三个；google-generative-ai 等只存在于 pi-ai 内置
+ * 目录，自定义 URL 写进去会被拒。
  */
 export const HOST_APIS = [
   'openai-completions', 'openai-responses', 'anthropic-messages',

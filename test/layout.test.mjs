@@ -12,11 +12,11 @@ import { name } from '../src/dsh/plugin.mjs';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 
-test('版本 0.11.0，服务端与浏览器入口都可发布', async () => {
+test('版本 0.12.0，服务端与浏览器入口都可发布', async () => {
   const pkg = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
   const plugin = JSON.parse(await readFile(join(root, 'dsh.plugin.json'), 'utf8'));
-  assert.equal(pkg.version, '0.11.0');
-  assert.equal(plugin.version, '0.11.0');
+  assert.equal(pkg.version, '0.12.0');
+  assert.equal(plugin.version, '0.12.0');
   assert.equal(pkg.main, './src/plugin.mjs');
   assert.equal(plugin.main, 'src/plugin.mjs');
   assert.equal(pkg.exports['./client'], './lib/client.js');
@@ -56,10 +56,10 @@ test('AGENTS.md 宿主契约枚举与代码导出一致', async () => {
   for (const tf of THINKING_FORMATS) assert.match(agents, new RegExp(tf.replace(/-/g, '\\-')));
   assert.match(agents, /没有 `reasoning_effort`/);
   assert.doesNotMatch(agents, /thinkingFormat` 11 值：[^。]*reasoning_effort/);
-  assert.equal(COMPAT_GATES['openai-completions'].length, 17);
-  assert.equal(COMPAT_GATES['openai-responses'].length, 3);
+  assert.equal(COMPAT_GATES['openai-completions'].length, 19);
+  assert.equal(COMPAT_GATES['openai-responses'].length, 4);
   assert.equal(COMPAT_GATES['anthropic-messages'].length, 7);
-  assert.match(agents, /openai-completions 17/);
+  assert.match(agents, /openai-completions 19/);
   assert.match(agents, /anthropic-messages 7/);
 });
 

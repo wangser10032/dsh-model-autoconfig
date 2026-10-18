@@ -39,6 +39,13 @@ export const VENDORS = [
         contextWindow: 1000000, maxTokens: 384000, input: ['text', 'image'],
         efforts: { off: null, low: 'low', high: 'high', max: 'max' },
         collapses: { medium: 'high', xhigh: 'high' } },
+      // 出处：pi-ai 1.3 目录 deepseek.json chat:deepseek-flash（thinkingFormat deepseek，
+      // thinkingLevelMap 无 off，medium 为空值）——与 V4-Flash 同档位，补显式 off。
+      { match: /^deepseek-flash$/i, name: 'DeepSeek Flash',
+        contextWindow: 1000000, maxTokens: 384000, input: ['text', 'image'],
+        efforts: { off: null, low: 'low', high: 'high', max: 'max' },
+        collapses: { medium: 'high', xhigh: 'high' },
+        note: 'pi-ai 1.3 新增；目录缺 off 键，官方三档 low/high/max' },
       // ── 旧别名：2026-04-24 起指向 V4-Flash，官方公告 2026-07-24 停用，
       //    但变更日志显示仍在映射。留在真值库里是为了「认得出 + 给出警告」，
       //    而不是让用户配了个空档位表还不知道为什么。
@@ -67,6 +74,27 @@ export const VENDORS = [
     thinkingFormat: 'openai',
     source: 'https://developers.openai.com/api/docs/guides/reasoning',
     models: [
+      // 出处：pi-ai 1.3 openai.json chat:gpt-6-* / chat:gpt-daybreak-* 的 thinkingLevelMap。
+      { match: /^gpt-6\.1-sol$/i, contextWindow: 272000, maxTokens: 128000,
+        input: ['text', 'image'],
+        efforts: { off: null, low: 'low', medium: 'medium', high: 'high', xhigh: 'xhigh', max: 'max' },
+        note: '目录 thinkingLevelMap: off 为空值（发不出 none）' },
+      { match: /^gpt-6-astra$/i, contextWindow: 272000, maxTokens: 128000,
+        input: ['text', 'image'],
+        efforts: { off: null, low: 'low', medium: 'medium', high: 'high', xhigh: 'xhigh', max: 'max' },
+        note: '目录 thinkingLevelMap: off 为空值' },
+      { match: /^gpt-6-(luna|sol)$/i, contextWindow: 272000, maxTokens: 128000,
+        input: ['text', 'image'],
+        efforts: { off: 'none', low: 'low', medium: 'medium', high: 'high', xhigh: 'xhigh', max: 'max' },
+        note: '目录 off 的 wire 值是 none' },
+      { match: /^gpt-daybreak-blue-latest$/i, contextWindow: 1050000, maxTokens: 128000,
+        input: ['text', 'image'],
+        efforts: { off: 'none', low: 'low', medium: 'medium', high: 'high', xhigh: 'xhigh', max: 'max' },
+        note: 'Daybreak Blue；目录 off 的 wire 值是 none' },
+      { match: /^gpt-daybreak-red-latest$/i, contextWindow: 400000, maxTokens: 128000,
+        input: ['text', 'image'],
+        efforts: { off: 'none', low: 'low', medium: 'medium', high: 'high', xhigh: 'xhigh', max: 'max' },
+        note: 'Daybreak Red；目录 off 的 wire 值是 none' },
       { match: /^gpt-5\.6(-|$)/i, exclude: /codex/i, contextWindow: 1050000, maxTokens: 128000,
         input: ['text', 'image'],
         efforts: { off: 'none', low: 'low', medium: 'medium', high: 'high', xhigh: 'xhigh', max: 'max' },
@@ -166,6 +194,12 @@ export const VENDORS = [
       { match: /^claude-haiku-4[.-]5/i, contextWindow: 200000, maxTokens: 64000,
         input: ['text', 'image'],
         efforts: { off: null, low: 'low', medium: 'medium', high: 'high' } },
+      // 出处：pi-ai 1.3 anthropic.json chat:claude-haiku-5-5
+      // （thinkingLevelMap 无 off，compat.forceAdaptiveThinking: true）。
+      { match: /^claude-haiku-5[.-]5/i, contextWindow: 1000000, maxTokens: 128000,
+        input: ['text', 'image'], forceAdaptiveThinking: true,
+        efforts: { off: null, low: 'low', medium: 'medium', high: 'high', xhigh: 'xhigh', max: 'max' },
+        note: 'Haiku 5.5 走 adaptive thinking；目录缺 off 键' },
     ],
   },
   {
@@ -360,6 +394,12 @@ export const VENDORS = [
     thinkingFormat: 'openai',
     source: 'https://ai.google.dev/gemini-api/docs/openai',
     models: [
+      // 出处：pi-ai 1.3 google.json chat:gemini-4-argon
+      // （thinkingLevelMap: off/minimal/xhigh/max 为空值，只有 low/medium/high 可发送）。
+      { match: /^gemini-4-argon/i, contextWindow: 1048576, maxTokens: 32768,
+        input: ['text', 'image'],
+        efforts: { off: null, low: 'low', medium: 'medium', high: 'high' },
+        note: '目录 thinkingLevelMap 只给 low/medium/high 可发送；xhigh/max 为空值' },
       { match: /^gemini-3(\.\d+)?-?flash/i,
         forcedThinking: 'Gemini 3 系列 thinking_level 的地板是 minimal，官方明示「minimal does not guarantee that thinking is off」', contextWindow: 1048576, maxTokens: 65536,
         input: ['text', 'image'],

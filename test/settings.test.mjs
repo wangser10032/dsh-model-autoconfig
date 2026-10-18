@@ -18,13 +18,16 @@ const sandbox = () => { const h = mkdtempSync(join(tmpdir(), 'dsh-mac-home-')); 
 
 test.after(() => { for (const h of homes) rmSync(h, { recursive: true, force: true }); });
 
-/** 固定 HOME 与 DSH_HOME 后跑 fn，跑完恢复。 */
+/** 固定 HOME/USERPROFILE 与 DSH_HOME 后跑 fn，跑完恢复。Windows 的
+ *  os.homedir() 读 USERPROFILE，只改 HOME 不生效。 */
 const withEnv = (home, dshHome, fn) => {
-  const prevHome = process.env.HOME, prevDsh = process.env.DSH_HOME;
+  const prevHome = process.env.HOME, prevProfile = process.env.USERPROFILE, prevDsh = process.env.DSH_HOME;
   process.env.HOME = home;
+  process.env.USERPROFILE = home;
   if (dshHome === undefined) delete process.env.DSH_HOME; else process.env.DSH_HOME = dshHome;
   try { return fn(); } finally {
     process.env.HOME = prevHome;
+    if (prevProfile === undefined) delete process.env.USERPROFILE; else process.env.USERPROFILE = prevProfile;
     if (prevDsh === undefined) delete process.env.DSH_HOME; else process.env.DSH_HOME = prevDsh;
   }
 };
